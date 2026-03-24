@@ -8,10 +8,13 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.npm-cache
 dist
 dist-ssr
 coverage
 *.local
+vite.log
+vite.err.log
 
 # Editor directories and files
 .vscode/*

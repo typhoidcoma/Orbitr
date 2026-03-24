@@ -1,6 +1,7 @@
 :root {
   --bg-main: #08121a;
   --bg-panel: #0f2230;
+  --bg-panel-soft: #12293a;
   --bg-status: #163246;
   --bg-status-warning: #473507;
   --bg-status-error: #4a1212;
@@ -8,7 +9,7 @@
   --text-muted: #a8c3d9;
   --accent: #4ac2ff;
   --accent-active: #ffe084;
-  --reticle: #ffec99;
+  --border: #224055;
 }
 
 * {
@@ -49,7 +50,13 @@ body {
   padding: 12px;
   border-radius: 12px;
   background: color-mix(in oklab, var(--bg-panel), black 10%);
-  border: 1px solid #224055;
+  border: 1px solid var(--border);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .brand h1 {
@@ -80,6 +87,22 @@ body {
   color: #1f1600;
 }
 
+.secondary {
+  border: 1px solid #32627f;
+  background: color-mix(in oklab, var(--bg-panel-soft), black 6%);
+  color: var(--text-main);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary.active {
+  border-color: #7fbfda;
+  background: linear-gradient(140deg, #173e56, #246685);
+  color: #eef9ff;
+}
+
 .status {
   min-height: 40px;
   display: flex;
@@ -87,7 +110,7 @@ body {
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--bg-status);
-  border: 1px solid #224055;
+  border: 1px solid var(--border);
 }
 
 .status[data-tone="warning"] {
@@ -100,12 +123,90 @@ body {
   border-color: #8d3b3b;
 }
 
+.workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--bg-panel), black 8%);
+  border: 1px solid var(--border);
+  min-height: 0;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.field input {
+  width: 100%;
+  border-radius: 9px;
+  border: 1px solid #33566d;
+  background: #0a1a25;
+  color: var(--text-main);
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-main);
+}
+
+.debug-readout {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #07131c;
+  border: 1px solid #17364a;
+  color: #b7d9ee;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .viewer-host {
   position: relative;
   min-height: 300px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid #224055;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(16, 39, 55, 0.6), rgba(7, 18, 26, 0.9)),
+    radial-gradient(circle at 50% 18%, rgba(88, 184, 255, 0.12), transparent 40%);
+  box-shadow: inset 0 0 0 1px rgba(107, 166, 201, 0.08);
 }
 
 .viewer-host canvas {
@@ -114,19 +215,18 @@ body {
   display: block;
 }
 
-.reticle {
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  margin-left: -9px;
-  margin-top: -9px;
-  border-radius: 999px;
-  border: 2px solid var(--reticle);
-  box-shadow: 0 0 16px rgba(255, 236, 153, 0.7);
-  pointer-events: none;
-  left: 50%;
-  top: 50%;
-  transition: opacity 120ms linear;
+.viewer-host:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #000;
+}
+
+.viewer-host:fullscreen canvas {
+  width: 100vw;
+  height: 100vh;
 }
 
 .fatal {
@@ -135,13 +235,32 @@ body {
   white-space: pre-wrap;
 }
 
+@media (max-width: 980px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(320px, 1fr);
+  }
+}
+
 @media (max-width: 720px) {
   .toolbar {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .primary {
+  .toolbar-actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .primary,
+  .secondary {
+    width: 100%;
+  }
+
+  .panel-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

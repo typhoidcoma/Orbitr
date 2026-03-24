@@ -1,10 +1,14 @@
-export interface OffAxisProjectionInput {
-  fov: number;
-  aspect: number;
+export interface ScreenWindowProjectionInput {
+  screenWidth: number;
+  screenHeight: number;
   near: number;
   far: number;
-  shiftX: number;
-  shiftY: number;
+  eyeX: number;
+  eyeY: number;
+  eyeZ: number;
+  screenOffsetX: number;
+  screenOffsetY: number;
+  screenOffsetZ: number;
 }
 
 export interface OffAxisFrustum {
@@ -14,22 +18,23 @@ export interface OffAxisFrustum {
   bottom: number;
 }
 
-export function computeOffAxisFrustum(input: OffAxisProjectionInput): OffAxisFrustum {
-  const halfVertical = Math.tan((input.fov * Math.PI) / 360) * input.near;
-  const halfHorizontal = halfVertical * input.aspect;
-
-  // shiftX/shiftY are normalized offsets where +/-1 means one half-frustum shift.
-  const horizontalOffset = halfHorizontal * input.shiftX;
-  const verticalOffset = halfVertical * input.shiftY;
+export function computeOffAxisFrustum(input: ScreenWindowProjectionInput): OffAxisFrustum {
+  const halfWidth = input.screenWidth * 0.5;
+  const halfHeight = input.screenHeight * 0.5;
+  const distanceToScreen = Math.max(0.001, input.eyeZ - input.screenOffsetZ);
+  const leftWorld = input.screenOffsetX - halfWidth;
+  const rightWorld = input.screenOffsetX + halfWidth;
+  const bottomWorld = input.screenOffsetY - halfHeight;
+  const topWorld = input.screenOffsetY + halfHeight;
 
   return {
-    left: -halfHorizontal + horizontalOffset,
-    right: halfHorizontal + horizontalOffset,
-    bottom: -halfVertical + verticalOffset,
-    top: halfVertical + verticalOffset,
+    left: (input.near * (leftWorld - input.eyeX)) / distanceToScreen,
+    right: (input.near * (rightWorld - input.eyeX)) / distanceToScreen,
+    bottom: (input.near * (bottomWorld - input.eyeY)) / distanceToScreen,
+    top: (input.near * (topWorld - input.eyeY)) / distanceToScreen,
   };
 }
 
-export function clamp01(value: number): number {
-  return Math.max(-1, Math.min(1, value));
+export function clampSigned(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
