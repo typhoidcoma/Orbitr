@@ -1,0 +1,147 @@
+:root {
+  --bg-main: #08121a;
+  --bg-panel: #0f2230;
+  --bg-status: #163246;
+  --bg-status-warning: #473507;
+  --bg-status-error: #4a1212;
+  --text-main: #e6f3ff;
+  --text-muted: #a8c3d9;
+  --accent: #4ac2ff;
+  --accent-active: #ffe084;
+  --reticle: #ffec99;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 20% 20%, #15364d 0%, transparent 48%),
+    radial-gradient(circle at 85% 80%, #132f42 0%, transparent 40%),
+    var(--bg-main);
+  color: var(--text-main);
+}
+
+.layout {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  width: 100%;
+  height: 100%;
+  gap: 10px;
+  padding: 12px;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--bg-panel), black 10%);
+  border: 1px solid #224055;
+}
+
+.brand h1 {
+  margin: 0;
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+
+.brand p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.primary {
+  border: 1px solid #3e7ea5;
+  background: linear-gradient(140deg, #134362, #1d6c95);
+  color: white;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary.active {
+  border-color: #9f7f2d;
+  background: linear-gradient(140deg, #6d5014, #a9801a);
+  color: #1f1600;
+}
+
+.status {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-status);
+  border: 1px solid #224055;
+}
+
+.status[data-tone="warning"] {
+  background: var(--bg-status-warning);
+  border-color: #8b6520;
+}
+
+.status[data-tone="error"] {
+  background: var(--bg-status-error);
+  border-color: #8d3b3b;
+}
+
+.viewer-host {
+  position: relative;
+  min-height: 300px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #224055;
+}
+
+.viewer-host canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.reticle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border-radius: 999px;
+  border: 2px solid var(--reticle);
+  box-shadow: 0 0 16px rgba(255, 236, 153, 0.7);
+  pointer-events: none;
+  left: 50%;
+  top: 50%;
+  transition: opacity 120ms linear;
+}
+
+.fatal {
+  color: #ff9d9d;
+  padding: 24px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 720px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .primary {
+    width: 100%;
+  }
+}
