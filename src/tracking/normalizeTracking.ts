@@ -6,12 +6,16 @@ export interface RawTrackingObservation {
   headCenterY: number;
   eyeSeparation: number;
   faceWidth: number;
+  faceHeight: number;
   faceScale: number;
   gazeX: number;
   gazeY: number;
   yaw: number;
   pitch: number;
   confidence: number;
+  detectionConfidence: number;
+  presenceConfidence: number;
+  trackingConfidence: number;
 }
 
 export interface TrackingNeutralPose {
@@ -32,13 +36,22 @@ export interface ViewerPose {
     headCenterY: number;
     eyeSeparation: number;
     faceWidth: number;
+    faceHeight: number;
     faceScale: number;
     estimatedDistance: number;
     headOffsetX: number;
     headOffsetY: number;
     gazeX: number;
     gazeY: number;
+    detectionConfidence: number;
+    presenceConfidence: number;
+    trackingConfidence: number;
   };
+}
+
+export interface StabilityAssessment {
+  isValid: boolean;
+  isStableForNeutralCapture: boolean;
 }
 
 export function createNeutralPose(
@@ -88,13 +101,47 @@ export function normalizeTrackingObservation(
       headCenterY: observation.headCenterY,
       eyeSeparation: observation.eyeSeparation,
       faceWidth: observation.faceWidth,
+      faceHeight: observation.faceHeight,
       faceScale: observation.faceScale,
       estimatedDistance,
       headOffsetX,
       headOffsetY,
       gazeX: observation.gazeX,
       gazeY: observation.gazeY,
+      detectionConfidence: observation.detectionConfidence,
+      presenceConfidence: observation.presenceConfidence,
+      trackingConfidence: observation.trackingConfidence,
     },
+  };
+}
+
+export function assessTrackingObservation(
+  observation: RawTrackingObservation,
+  neutral: TrackingNeutralPose | null,
+  calibration: ParallaxCalibration
+): StabilityAssessment {
+  const isValid =
+    observation.detectionConfidence >= calibration.minFaceDetectionConfidence &&
+    observation.presenceConfidence >= calibration.minFacePresenceConfidence &&
+    observation.trackingConfidence >= calibration.minTrackingConfidence;
+
+  if (!isValid || !neutral) {
+    return {
+      isValid,
+      isStableForNeutralCapture: false,
+    };
+  }
+
+  const headOffsetX = Math.abs(observation.headCenterX - neutral.headCenterX);
+  const headOffsetY = Math.abs(observation.headCenterY - neutral.headCenterY);
+  const scaleDelta = Math.abs(observation.faceScale - neutral.faceScale);
+
+  return {
+    isValid,
+    isStableForNeutralCapture:
+      headOffsetX <= calibration.neutralCaptureMaxOffset &&
+      headOffsetY <= calibration.neutralCaptureMaxOffset &&
+      scaleDelta <= calibration.neutralCaptureMaxScaleDelta,
   };
 }
 

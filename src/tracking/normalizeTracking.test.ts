@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PARALLAX_CALIBRATION } from "../lib/parallaxConfig";
 import {
+  assessTrackingObservation,
   createNeutralPose,
   normalizeTrackingObservation,
   type RawTrackingObservation,
@@ -12,12 +13,16 @@ function observation(overrides: Partial<RawTrackingObservation> = {}): RawTracki
     headCenterY: 0.45,
     eyeSeparation: 0.12,
     faceWidth: 0.34,
-    faceScale: 0.197,
+    faceHeight: 0.29,
+    faceScale: 0.247,
     gazeX: 0,
     gazeY: 0,
     yaw: 0,
     pitch: 0,
     confidence: 1,
+    detectionConfidence: 0.9,
+    presenceConfidence: 0.9,
+    trackingConfidence: 0.9,
     ...overrides,
   };
 }
@@ -42,10 +47,15 @@ describe("normalizeTrackingObservation", () => {
   });
 
   it("treats a larger face scale as moving closer to the screen", () => {
-    const neutral = createNeutralPose(observation({ faceScale: 0.197 }), null);
+    const neutral = createNeutralPose(observation({ faceScale: 0.247 }), null);
 
     const closer = normalizeTrackingObservation(
-      observation({ eyeSeparation: 0.14, faceWidth: 0.38, faceScale: 0.224 }),
+      observation({
+        eyeSeparation: 0.14,
+        faceWidth: 0.38,
+        faceHeight: 0.32,
+        faceScale: 0.286,
+      }),
       neutral,
       DEFAULT_PARALLAX_CALIBRATION
     );
@@ -74,15 +84,34 @@ describe("normalizeTrackingObservation", () => {
     expect(Math.abs(pose.eyeX)).toBeLessThan(0.2);
   });
 
-  it("maps a face moving left in camera space to a viewer moving right", () => {
-    const neutral = createNeutralPose(observation({ headCenterX: 0.5 }), null);
-
-    const pose = normalizeTrackingObservation(
-      observation({ headCenterX: 0.45 }),
+  it("marks low-confidence observations invalid", () => {
+    const neutral = createNeutralPose(observation(), null);
+    const assessment = assessTrackingObservation(
+      observation({
+        detectionConfidence: 0.4,
+        presenceConfidence: 0.4,
+        trackingConfidence: 0.4,
+      }),
       neutral,
       DEFAULT_PARALLAX_CALIBRATION
     );
 
-    expect(pose.eyeX).toBeGreaterThan(DEFAULT_PARALLAX_CALIBRATION.cameraOffsetX);
+    expect(assessment.isValid).toBe(false);
+    expect(assessment.isStableForNeutralCapture).toBe(false);
+  });
+
+  it("allows neutral capture only for stable observations", () => {
+    const neutral = createNeutralPose(observation(), null);
+    const stable = assessTrackingObservation(observation(), neutral, DEFAULT_PARALLAX_CALIBRATION);
+    const unstable = assessTrackingObservation(
+      observation({
+        headCenterX: 0.6,
+      }),
+      neutral,
+      DEFAULT_PARALLAX_CALIBRATION
+    );
+
+    expect(stable.isStableForNeutralCapture).toBe(true);
+    expect(unstable.isStableForNeutralCapture).toBe(false);
   });
 });

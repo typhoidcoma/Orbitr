@@ -1,14 +1,14 @@
 export interface ScreenWindowProjectionInput {
-  screenWidth: number;
-  screenHeight: number;
   near: number;
   far: number;
   eyeX: number;
   eyeY: number;
   eyeZ: number;
-  screenOffsetX: number;
-  screenOffsetY: number;
-  screenOffsetZ: number;
+  screenLeft: number;
+  screenRight: number;
+  screenTop: number;
+  screenBottom: number;
+  screenZ: number;
 }
 
 export interface OffAxisFrustum {
@@ -19,19 +19,13 @@ export interface OffAxisFrustum {
 }
 
 export function computeOffAxisFrustum(input: ScreenWindowProjectionInput): OffAxisFrustum {
-  const halfWidth = input.screenWidth * 0.5;
-  const halfHeight = input.screenHeight * 0.5;
-  const distanceToScreen = Math.max(0.001, input.eyeZ - input.screenOffsetZ);
-  const leftWorld = input.screenOffsetX - halfWidth;
-  const rightWorld = input.screenOffsetX + halfWidth;
-  const bottomWorld = input.screenOffsetY - halfHeight;
-  const topWorld = input.screenOffsetY + halfHeight;
+  const distanceToScreen = Math.max(0.001, input.eyeZ - input.screenZ);
 
   return {
-    left: (input.near * (leftWorld - input.eyeX)) / distanceToScreen,
-    right: (input.near * (rightWorld - input.eyeX)) / distanceToScreen,
-    bottom: (input.near * (bottomWorld - input.eyeY)) / distanceToScreen,
-    top: (input.near * (topWorld - input.eyeY)) / distanceToScreen,
+    left: (input.near * (input.screenLeft - input.eyeX)) / distanceToScreen,
+    right: (input.near * (input.screenRight - input.eyeX)) / distanceToScreen,
+    bottom: (input.near * (input.screenBottom - input.eyeY)) / distanceToScreen,
+    top: (input.near * (input.screenTop - input.eyeY)) / distanceToScreen,
   };
 }
 

@@ -26,6 +26,18 @@ export interface ParallaxCalibration {
   cameraOffsetY: number;
   cameraOffsetZ: number;
   smoothing: number;
+  headSmoothing: number;
+  depthSmoothing: number;
+  gazeSmoothing: number;
+  minFaceDetectionConfidence: number;
+  minFacePresenceConfidence: number;
+  minTrackingConfidence: number;
+  maxEyeDeltaX: number;
+  maxEyeDeltaY: number;
+  maxEyeDeltaZ: number;
+  neutralCaptureStableFrames: number;
+  neutralCaptureMaxOffset: number;
+  neutralCaptureMaxScaleDelta: number;
   showDebug: boolean;
   showPresentationRoom: boolean;
   showWireframeRoom: boolean;
@@ -84,6 +96,18 @@ export const DEFAULT_PARALLAX_CALIBRATION: ParallaxCalibration = {
   cameraOffsetY: 0.08,
   cameraOffsetZ: 0.035,
   smoothing: 0.2,
+  headSmoothing: 0.18,
+  depthSmoothing: 0.24,
+  gazeSmoothing: 0.34,
+  minFaceDetectionConfidence: 0.72,
+  minFacePresenceConfidence: 0.72,
+  minTrackingConfidence: 0.72,
+  maxEyeDeltaX: 0.05,
+  maxEyeDeltaY: 0.05,
+  maxEyeDeltaZ: 0.07,
+  neutralCaptureStableFrames: 12,
+  neutralCaptureMaxOffset: 0.012,
+  neutralCaptureMaxScaleDelta: 0.01,
   showDebug: false,
   showPresentationRoom: true,
   showWireframeRoom: true,

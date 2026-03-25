@@ -4,9 +4,11 @@ import {
   resetViewerState,
   saveViewerState,
 } from "./lib/calibrationStorage";
+import { DEFAULT_MODEL_TRANSFORM } from "./lib/parallaxConfig";
 import { parseViewerUrlParams } from "./lib/urlParams";
 import { loadViewerModel } from "./model/loadModel";
-import { FaceTracker } from "./tracking/faceTracker";
+import { FaceTracker, type TrackingDiagnostics } from "./tracking/faceTracker";
+import type { ViewerPose } from "./tracking/normalizeTracking";
 import { createAppUi } from "./ui/appUi";
 import { Viewer } from "./viewer/viewer";
 
@@ -74,7 +76,11 @@ async function bootstrap(): Promise<void> {
   });
 
   const loadedModel = await loadViewerModel(params.modelUrl);
+  modelTransform = { ...DEFAULT_MODEL_TRANSFORM };
+  viewer.setModelTransform(modelTransform);
+  ui.setModelTransform(modelTransform);
   viewer.setModel(loadedModel.model);
+  let latestDebugPose: ViewerPose | null = null;
 
   if (loadedModel.warning) {
     ui.setStatus(loadedModel.warning, "warning");
@@ -90,17 +96,50 @@ async function bootstrap(): Promise<void> {
     saveViewerState(calibration, modelTransform);
   };
 
+  persist();
+
+  const applyModelTransform = (next: typeof modelTransform): void => {
+    modelTransform = next;
+    viewer.setModelTransform(next);
+    ui.setModelTransform(next);
+    persist();
+  };
+
   const tracker = new FaceTracker(
     {
       onFrame(frame) {
+        latestDebugPose = frame;
         viewer.setViewerPose(frame);
-        ui.updateDebugPose(frame);
+        ui.updateDebugPose(frame, viewer.getEffectiveScreenRect());
       },
       onError(message) {
         ui.setStatus(message, "error");
       },
       onPreviewStream(stream) {
         ui.setPreviewStream(stream);
+      },
+      onDiagnostics(diagnostics: TrackingDiagnostics) {
+        if (!tracker.isRunning()) {
+          return;
+        }
+
+        if (diagnostics.mode === "tracking") {
+          ui.setStatus(
+            calibration.calibrationComplete
+              ? `${diagnostics.message} Close one eye and test left/right motion.`
+              : `${diagnostics.message} Capture a neutral pose when you are seated normally.`
+          );
+          return;
+        }
+
+        if (diagnostics.mode === "invalid") {
+          ui.setStatus(diagnostics.message, "warning");
+          return;
+        }
+
+        if (diagnostics.mode === "searching") {
+          ui.setStatus(diagnostics.message, "warning");
+        }
       },
     },
     calibration
@@ -132,10 +171,7 @@ async function bootstrap(): Promise<void> {
       );
     },
     onModelTransformChange(next) {
-      modelTransform = next;
-      viewer.setModelTransform(next);
-      ui.setModelTransform(next);
-      persist();
+      applyModelTransform(next);
     },
     onResetState() {
       persistedState = resetViewerState();
@@ -176,12 +212,77 @@ async function bootstrap(): Promise<void> {
   document.addEventListener("webkitfullscreenchange", syncFullscreenButton as EventListener);
   syncFullscreenButton();
 
+  let dragPointerId: number | null = null;
+  let lastPointerX = 0;
+  let lastPointerY = 0;
+
+  ui.canvasHost.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    dragPointerId = event.pointerId;
+    lastPointerX = event.clientX;
+    lastPointerY = event.clientY;
+    ui.canvasHost.setPointerCapture(event.pointerId);
+    ui.canvasHost.dataset.dragging = "1";
+  });
+
+  ui.canvasHost.addEventListener("pointermove", (event) => {
+    if (dragPointerId !== event.pointerId) {
+      return;
+    }
+
+    const rect = ui.canvasHost.getBoundingClientRect();
+    const effectiveScreen = viewer.getEffectiveScreenRect();
+    const deltaX = event.clientX - lastPointerX;
+    const deltaY = event.clientY - lastPointerY;
+    lastPointerX = event.clientX;
+    lastPointerY = event.clientY;
+
+    const moveX = (deltaX / Math.max(1, rect.width)) * effectiveScreen.width;
+    const moveY = (-deltaY / Math.max(1, rect.height)) * effectiveScreen.height;
+
+    applyModelTransform({
+      ...modelTransform,
+      positionX: modelTransform.positionX + moveX,
+      positionY: modelTransform.positionY + moveY,
+    });
+  });
+
+  const endDrag = (event: PointerEvent): void => {
+    if (dragPointerId !== event.pointerId) {
+      return;
+    }
+
+    ui.canvasHost.releasePointerCapture(event.pointerId);
+    dragPointerId = null;
+    delete ui.canvasHost.dataset.dragging;
+  };
+
+  ui.canvasHost.addEventListener("pointerup", endDrag);
+  ui.canvasHost.addEventListener("pointercancel", endDrag);
+
+  ui.canvasHost.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const depthStep = 0.0008 * event.deltaY;
+      applyModelTransform({
+        ...modelTransform,
+        positionZ: modelTransform.positionZ + depthStep,
+      });
+    },
+    { passive: false }
+  );
+
   ui.toggleTrackingButton.addEventListener("click", async () => {
     if (tracker.isRunning()) {
       tracker.stop();
       ui.setTrackingEnabled(false);
       viewer.setTrackingEnabled(false);
-      ui.updateDebugPose(null);
+      latestDebugPose = null;
+      ui.updateDebugPose(null, viewer.getEffectiveScreenRect());
       ui.setStatus("Tracking stopped. Viewer returned to the calibrated neutral eye position.");
       return;
     }
@@ -203,6 +304,7 @@ async function bootstrap(): Promise<void> {
 
   const animate = (): void => {
     viewer.frame();
+    ui.updateDebugPose(latestDebugPose, viewer.getEffectiveScreenRect());
     requestAnimationFrame(animate);
   };
 

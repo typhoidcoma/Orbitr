@@ -60,4 +60,4 @@ Open `http://127.0.0.1:5173`.
 
 ## Defaults
 
-If no custom model is provided, Orbitr loads a procedural reference object inside a checker-lined room so the parallax cues stay readable during calibration.
+If no custom model is provided, Orbitr loads the Three.js `Duck.glb` by default. If that remote asset fails to load, Orbitr falls back to a built-in procedural duck inside the checker-lined room.

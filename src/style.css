@@ -339,6 +339,12 @@ body {
     linear-gradient(180deg, rgba(16, 39, 55, 0.6), rgba(7, 18, 26, 0.9)),
     radial-gradient(circle at 50% 18%, rgba(88, 184, 255, 0.12), transparent 40%);
   box-shadow: inset 0 0 0 1px rgba(107, 166, 201, 0.08);
+  cursor: grab;
+  touch-action: none;
+}
+
+.viewer-host[data-dragging="1"] {
+  cursor: grabbing;
 }
 
 .viewer-host canvas {

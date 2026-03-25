@@ -6,6 +6,7 @@ import {
   type ParallaxCalibration,
 } from "../lib/parallaxConfig";
 import type { ViewerPose } from "../tracking/normalizeTracking";
+import type { EffectiveScreenRect } from "../viewer/viewer";
 
 export type UiTone = "normal" | "warning" | "error";
 type NumericCalibrationField = Exclude<
@@ -38,7 +39,7 @@ export interface AppUi {
   setCalibration: (calibration: ParallaxCalibration) => void;
   setModelTransform: (modelTransform: ModelTransform) => void;
   setPreviewStream: (stream: MediaStream | null) => void;
-  updateDebugPose: (pose: ViewerPose | null) => void;
+  updateDebugPose: (pose: ViewerPose | null, screenRect?: EffectiveScreenRect | null) => void;
 }
 
 const CALIBRATION_FIELDS: NumericCalibrationField[] = [
@@ -48,6 +49,9 @@ const CALIBRATION_FIELDS: NumericCalibrationField[] = [
   "cameraOffsetX",
   "cameraOffsetY",
   "cameraOffsetZ",
+  "headSmoothing",
+  "depthSmoothing",
+  "gazeSmoothing",
   "gainX",
   "gainY",
   "gainZ",
@@ -56,6 +60,15 @@ const CALIBRATION_FIELDS: NumericCalibrationField[] = [
   "screenOffsetY",
   "screenOffsetZ",
   "smoothing",
+  "minFaceDetectionConfidence",
+  "minFacePresenceConfidence",
+  "minTrackingConfidence",
+  "maxEyeDeltaX",
+  "maxEyeDeltaY",
+  "maxEyeDeltaZ",
+  "neutralCaptureStableFrames",
+  "neutralCaptureMaxOffset",
+  "neutralCaptureMaxScaleDelta",
 ];
 
 const MODEL_FIELDS: NumericTransformField[] = [
@@ -148,6 +161,11 @@ export function createAppUi(
             <p>Set your typical eye-to-screen distance and smoothing. This becomes the neutral reference.</p>
             ${renderCalibrationField("neutralDistance", "Neutral Distance (m)", "0.25", "1.8", "0.001")}
             ${renderCalibrationField("smoothing", "Smoothing", "0", "1", "0.01")}
+            <div class="two-up">
+              ${renderCalibrationField("headSmoothing", "Head Smoothing", "0", "1", "0.01")}
+              ${renderCalibrationField("depthSmoothing", "Depth Smoothing", "0", "1", "0.01")}
+            </div>
+            ${renderCalibrationField("gazeSmoothing", "Gaze Smoothing", "0", "1", "0.01")}
             ${renderWizardActions("distance")}
           </section>
 
@@ -203,6 +221,15 @@ export function createAppUi(
               ${renderCalibrationField("gainY", "Head Gain Y", "-3", "3", "0.01")}
               ${renderCalibrationField("gainZ", "Depth Gain", "-3", "3", "0.01")}
               ${renderCalibrationField("eyeRefinementGain", "Eye Refinement", "-0.2", "0.2", "0.001")}
+              ${renderCalibrationField("minFaceDetectionConfidence", "Min Detection Conf", "0", "1", "0.01")}
+              ${renderCalibrationField("minFacePresenceConfidence", "Min Presence Conf", "0", "1", "0.01")}
+              ${renderCalibrationField("minTrackingConfidence", "Min Tracking Conf", "0", "1", "0.01")}
+              ${renderCalibrationField("maxEyeDeltaX", "Max Eye Delta X", "0", "1", "0.001")}
+              ${renderCalibrationField("maxEyeDeltaY", "Max Eye Delta Y", "0", "1", "0.001")}
+              ${renderCalibrationField("maxEyeDeltaZ", "Max Eye Delta Z", "0", "1", "0.001")}
+              ${renderCalibrationField("neutralCaptureStableFrames", "Stable Frames", "1", "120", "1")}
+              ${renderCalibrationField("neutralCaptureMaxOffset", "Neutral Max Offset", "0", "0.2", "0.001")}
+              ${renderCalibrationField("neutralCaptureMaxScaleDelta", "Neutral Max Scale Delta", "0", "0.2", "0.001")}
               ${renderCalibrationField("screenOffsetX", "Screen Offset X", "-1", "1", "0.001")}
               ${renderCalibrationField("screenOffsetY", "Screen Offset Y", "-1", "1", "0.001")}
               ${renderCalibrationField("screenOffsetZ", "Screen Offset Z", "-1", "1", "0.001")}
@@ -480,7 +507,7 @@ export function createAppUi(
       previewVideo.srcObject = stream;
       previewShell.hidden = !calibration.showFacePreview || stream === null;
     },
-    updateDebugPose(pose) {
+    updateDebugPose(pose, screenRect) {
       if (pose) {
         previewMarker.style.left = `${pose.debug.headCenterX * 100}%`;
         previewMarker.style.top = `${pose.debug.headCenterY * 100}%`;
@@ -506,9 +533,17 @@ export function createAppUi(
             `headCenterY: ${pose.debug.headCenterY.toFixed(3)}`,
             `eyeSeparation: ${pose.debug.eyeSeparation.toFixed(4)}`,
             `faceWidth: ${pose.debug.faceWidth.toFixed(4)}`,
+            `faceHeight: ${pose.debug.faceHeight.toFixed(4)}`,
             `faceScale: ${pose.debug.faceScale.toFixed(4)}`,
             `gazeX: ${pose.debug.gazeX.toFixed(3)}`,
             `gazeY: ${pose.debug.gazeY.toFixed(3)}`,
+            `detectConf: ${pose.debug.detectionConfidence.toFixed(3)}`,
+            `presenceConf: ${pose.debug.presenceConfidence.toFixed(3)}`,
+            `trackingConf: ${pose.debug.trackingConfidence.toFixed(3)}`,
+            `windowWidth: ${screenRect?.width.toFixed(3) ?? "0.000"}`,
+            `windowHeight: ${screenRect?.height.toFixed(3) ?? "0.000"}`,
+            `windowCenterX: ${screenRect?.centerX.toFixed(3) ?? "0.000"}`,
+            `windowCenterY: ${screenRect?.centerY.toFixed(3) ?? "0.000"}`,
           ].join("\n")
         : "No tracking data yet.";
     },

@@ -1,6 +1,5 @@
 import {
   AmbientLight,
-  AxesHelper,
   BackSide,
   BoxGeometry,
   CanvasTexture,
@@ -33,6 +32,24 @@ export interface ViewerConfig {
   modelTransform: ModelTransform;
 }
 
+export interface EffectiveScreenRect {
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  z: number;
+}
+
+export interface ModelBaseAnchor {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export class Viewer {
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
@@ -57,6 +74,7 @@ export class Viewer {
   private targetPose: ViewerPose;
   private smoothedPose: ViewerPose;
   private trackingEnabled = false;
+  private effectiveScreenRect: EffectiveScreenRect;
 
   constructor(container: HTMLElement, config: ViewerConfig) {
     this.container = container;
@@ -65,6 +83,7 @@ export class Viewer {
     this.modelTransform = config.modelTransform;
     this.targetPose = createNeutralViewerPose(this.calibration);
     this.smoothedPose = createNeutralViewerPose(this.calibration);
+    this.effectiveScreenRect = createFallbackScreenRect(this.calibration);
 
     this.camera = new PerspectiveCamera(50, 1, config.near, config.far);
     this.camera.position.set(0, 0, this.calibration.neutralDistance);
@@ -131,29 +150,23 @@ export class Viewer {
     const ambient = new AmbientLight("#d5e9ff", 0.8);
     const key = new DirectionalLight("#ffffff", 1.2);
     key.position.set(1.2, 1.6, 2.8);
-    const axes = new AxesHelper(0.4);
-    axes.position.set(
-      this.calibration.screenOffsetX,
-      this.calibration.screenOffsetY,
-      this.calibration.screenOffsetZ
-    );
 
-    this.scene.add(ambient, key, axes);
+    this.scene.add(ambient, key);
   }
 
   private applyOffAxisProjection(): void {
-    const screen = this.getEffectiveScreenDimensions();
+    const screen = this.syncEffectiveScreenRect();
     const frustum = computeOffAxisFrustum({
-      screenWidth: screen.width,
-      screenHeight: screen.height,
       near: this.config.near,
       far: this.config.far,
       eyeX: this.camera.position.x,
       eyeY: this.camera.position.y,
       eyeZ: this.camera.position.z,
-      screenOffsetX: this.calibration.screenOffsetX,
-      screenOffsetY: this.calibration.screenOffsetY,
-      screenOffsetZ: this.calibration.screenOffsetZ,
+      screenLeft: screen.left,
+      screenRight: screen.right,
+      screenBottom: screen.bottom,
+      screenTop: screen.top,
+      screenZ: screen.z,
     });
 
     this.frustumMatrix.makePerspective(
@@ -180,6 +193,10 @@ export class Viewer {
 
   public resize(): void {
     this.handleResize();
+  }
+
+  public getEffectiveScreenRect(): EffectiveScreenRect {
+    return this.effectiveScreenRect;
   }
 
   public setModel(modelRoot: Group): void {
@@ -219,6 +236,7 @@ export class Viewer {
 
     this.camera.position.set(this.smoothedPose.eyeX, this.smoothedPose.eyeY, this.smoothedPose.eyeZ);
     this.camera.rotation.set(0, 0, 0);
+    this.syncEffectiveScreenRect();
     this.applyOffAxisProjection();
     this.renderer.render(this.scene, this.camera);
   }
@@ -230,19 +248,17 @@ export class Viewer {
   }
 
   private layoutScene(): void {
-    const screen = this.getEffectiveScreenDimensions();
-    const roomDepth = Math.max(1.6, screen.width * 3);
-    const roomHeight = screen.height * 2.25;
-    const roomWidth = screen.width * 2.5;
-    const baseModelPositionX = this.calibration.screenOffsetX;
-    const baseModelPositionY = this.calibration.screenOffsetY - screen.height * 0.28;
-    const baseModelPositionZ = this.calibration.screenOffsetZ - roomDepth * 0.42;
+    const screen = this.syncEffectiveScreenRect();
+    const roomDepth = clamp(screen.width * 0.66, 0.22, 0.42);
+    const roomHeight = screen.height;
+    const roomWidth = screen.width;
+    const modelBaseAnchor = getModelBaseAnchor(screen);
 
     this.sceneContentGroup.position.set(0, 0, 0);
     this.modelAnchorGroup.position.set(
-      baseModelPositionX + this.modelTransform.positionX,
-      baseModelPositionY + this.modelTransform.positionY,
-      baseModelPositionZ + this.modelTransform.positionZ
+      modelBaseAnchor.x + this.modelTransform.positionX,
+      modelBaseAnchor.y + this.modelTransform.positionY,
+      modelBaseAnchor.z + this.modelTransform.positionZ
     );
     this.modelAnchorGroup.rotation.copy(
       new Euler(
@@ -254,9 +270,9 @@ export class Viewer {
     this.modelAnchorGroup.scale.setScalar(this.modelTransform.scale);
 
     this.screenGroup.position.set(
-      this.calibration.screenOffsetX,
-      this.calibration.screenOffsetY,
-      this.calibration.screenOffsetZ
+      screen.centerX,
+      screen.centerY,
+      screen.z
     );
     this.screenPlane.visible = this.calibration.showScreenFrame;
     this.screenFrame.visible = this.calibration.showScreenFrame;
@@ -265,9 +281,9 @@ export class Viewer {
 
     this.presentationRoomGroup.visible = this.calibration.showPresentationRoom;
     this.presentationRoomGroup.position.set(
-      this.calibration.screenOffsetX,
-      this.calibration.screenOffsetY + roomHeight * 0.08,
-      this.calibration.screenOffsetZ - roomDepth * 0.5
+      screen.centerX,
+      screen.centerY,
+      screen.z - roomDepth * 0.5
     );
     this.presentationRoomShell.scale.set(roomWidth, roomHeight, roomDepth);
 
@@ -276,28 +292,50 @@ export class Viewer {
     this.wireframeRoomShell.scale.set(roomWidth, roomHeight, roomDepth);
   }
 
-  private getEffectiveScreenDimensions(): { width: number; height: number } {
-    if (!this.isFullscreenViewportDriven()) {
-      return {
-        width: this.calibration.screenWidth,
-        height: this.calibration.screenHeight,
-      };
+  private syncEffectiveScreenRect(): EffectiveScreenRect {
+    const next = this.computeEffectiveScreenRect();
+    const changed =
+      Math.abs(next.width - this.effectiveScreenRect.width) > 0.0001 ||
+      Math.abs(next.height - this.effectiveScreenRect.height) > 0.0001 ||
+      Math.abs(next.centerX - this.effectiveScreenRect.centerX) > 0.0001 ||
+      Math.abs(next.centerY - this.effectiveScreenRect.centerY) > 0.0001 ||
+      Math.abs(next.z - this.effectiveScreenRect.z) > 0.0001;
+
+    this.effectiveScreenRect = next;
+    if (changed) {
+      this.screenGroup.position.set(next.centerX, next.centerY, next.z);
     }
 
-    const aspect = this.viewportWidth / this.viewportHeight;
-    const diagonal = Math.hypot(this.calibration.screenWidth, this.calibration.screenHeight);
-    const height = diagonal / Math.sqrt(aspect * aspect + 1);
-    const width = height * aspect;
-    return { width, height };
+    return next;
   }
 
-  private isFullscreenViewportDriven(): boolean {
-    const fullscreenElement =
-      document.fullscreenElement ??
-      (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement ??
-      null;
+  private computeEffectiveScreenRect(): EffectiveScreenRect {
+    const rect = this.container.getBoundingClientRect();
+    const viewportWidth = Math.max(1, window.innerWidth);
+    const viewportHeight = Math.max(1, window.innerHeight);
+    const widthRatio = clamp01(rect.width / viewportWidth);
+    const heightRatio = clamp01(rect.height / viewportHeight);
+    const width = Math.max(0.01, this.calibration.screenWidth * widthRatio);
+    const height = Math.max(0.01, this.calibration.screenHeight * heightRatio);
+    const centerRatioX = rect.left / viewportWidth + widthRatio * 0.5;
+    const centerRatioY = rect.top / viewportHeight + heightRatio * 0.5;
+    const centerX =
+      this.calibration.screenOffsetX + (centerRatioX - 0.5) * this.calibration.screenWidth;
+    const centerY =
+      this.calibration.screenOffsetY + (0.5 - centerRatioY) * this.calibration.screenHeight;
+    const z = this.calibration.screenOffsetZ;
 
-    return fullscreenElement === this.container;
+    return {
+      width,
+      height,
+      centerX,
+      centerY,
+      left: centerX - width * 0.5,
+      right: centerX + width * 0.5,
+      bottom: centerY - height * 0.5,
+      top: centerY + height * 0.5,
+      z,
+    };
   }
 }
 
@@ -319,12 +357,16 @@ function createNeutralViewerPose(calibration?: ParallaxCalibration): ViewerPose 
       headCenterY: 0.5,
       eyeSeparation: 0,
       faceWidth: 0,
+      faceHeight: 0,
       faceScale: 0,
       estimatedDistance: neutralDistance,
       headOffsetX: 0,
       headOffsetY: 0,
       gazeX: 0,
       gazeY: 0,
+      detectionConfidence: 0,
+      presenceConfidence: 0,
+      trackingConfidence: 0,
     },
   };
 }
@@ -360,4 +402,40 @@ function createCheckerTexture(): CanvasTexture {
 
 function degToRad(value: number): number {
   return (value * Math.PI) / 180;
+}
+
+function createFallbackScreenRect(calibration: ParallaxCalibration): EffectiveScreenRect {
+  const width = calibration.screenWidth;
+  const height = calibration.screenHeight;
+  const centerX = calibration.screenOffsetX;
+  const centerY = calibration.screenOffsetY;
+  const z = calibration.screenOffsetZ;
+
+  return {
+    width,
+    height,
+    centerX,
+    centerY,
+    left: centerX - width * 0.5,
+    right: centerX + width * 0.5,
+    bottom: centerY - height * 0.5,
+    top: centerY + height * 0.5,
+    z,
+  };
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function getModelBaseAnchor(screen: EffectiveScreenRect): ModelBaseAnchor {
+  return {
+    x: screen.centerX,
+    y: screen.centerY,
+    z: screen.z,
+  };
 }
