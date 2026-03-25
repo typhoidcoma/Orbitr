@@ -5,35 +5,24 @@ import {
   type MonitorPreset,
   type ParallaxCalibration,
 } from "../lib/parallaxConfig";
+import { screenDimensionsFromDiagonal } from "../lib/autoCalibrate";
 import type { ViewerPose } from "../tracking/normalizeTracking";
 import type { EffectiveScreenRect } from "../viewer/viewer";
 
 export type UiTone = "normal" | "warning" | "error";
-type NumericCalibrationField = Exclude<
-  keyof ParallaxCalibration,
-  | "showDebug"
-  | "showPresentationRoom"
-  | "showWireframeRoom"
-  | "showScreenFrame"
-  | "showFacePreview"
-  | "monitorPreset"
-  | "calibrationComplete"
->;
 type NumericTransformField = keyof ModelTransform;
 
-interface CalibrationHandlers {
+export interface CalibrationHandlers {
   onCalibrationChange: (next: ParallaxCalibration) => void;
-  onCaptureNeutral: () => void;
-  onAutoDetectDistance: () => void;
   onModelTransformChange: (next: ModelTransform) => void;
   onResetState: () => void;
 }
 
 export interface AppUi {
   canvasHost: HTMLDivElement;
-  toggleTrackingButton: HTMLButtonElement;
+  startButton: HTMLButtonElement;
   fullscreenButton: HTMLButtonElement;
-  setTrackingEnabled: (enabled: boolean) => void;
+  setTrackingActive: (active: boolean) => void;
   setFullscreenEnabled: (enabled: boolean) => void;
   setStatus: (message: string, tone?: UiTone) => void;
   bindHandlers: (handlers: CalibrationHandlers) => void;
@@ -42,37 +31,9 @@ export interface AppUi {
   setPreviewStream: (stream: MediaStream | null) => void;
   updateDebugPose: (pose: ViewerPose | null, screenRect?: EffectiveScreenRect | null) => void;
   updateNeutralProgress: (stableFrameCount: number, requiredFrames: number) => void;
+  openSettings: () => void;
+  closeSettings: () => void;
 }
-
-const CALIBRATION_FIELDS: NumericCalibrationField[] = [
-  "screenWidth",
-  "screenHeight",
-  "neutralDistance",
-  "cameraOffsetX",
-  "cameraOffsetY",
-  "cameraOffsetZ",
-  "headSmoothing",
-  "depthSmoothing",
-  "gazeSmoothing",
-  "gainX",
-  "gainY",
-  "gainZ",
-  "eyeRefinementGain",
-  "screenOffsetX",
-  "screenOffsetY",
-  "screenOffsetZ",
-  "smoothing",
-  "minFaceDetectionConfidence",
-  "minFacePresenceConfidence",
-  "minTrackingConfidence",
-  "maxEyeDeltaX",
-  "maxEyeDeltaY",
-  "maxEyeDeltaZ",
-  "neutralCaptureStableFrames",
-  "neutralCaptureMaxOffset",
-  "neutralCaptureMaxScaleDelta",
-  "movementScale",
-];
 
 const MODEL_FIELDS: NumericTransformField[] = [
   "positionX",
@@ -84,246 +45,137 @@ const MODEL_FIELDS: NumericTransformField[] = [
   "scale",
 ];
 
-const WIZARD_STEPS = [
-  "screen",
-  "webcam",
-  "distance",
-  "tracking",
-  "test",
-] as const;
-
-type WizardStep = (typeof WIZARD_STEPS)[number];
-
 export function createAppUi(
   root: HTMLElement,
   initialCalibration: ParallaxCalibration,
   initialModelTransform: ModelTransform
 ): AppUi {
   root.innerHTML = `
-    <div class="layout">
-      <header class="toolbar">
-        <div class="brand">
-          <h1>Orbitr</h1>
-          <p>Strict head-coupled screen-window viewer</p>
-        </div>
-        <div class="toolbar-actions">
-          <button id="fullscreen-toggle" class="secondary">Enter Fullscreen</button>
-          <button id="tracking-toggle" class="primary">Start Tracking</button>
-        </div>
-      </header>
-      <div id="status" class="status">Viewer ready. Run the calibration flow, then test the illusion.</div>
-      <section class="workspace">
-        <aside class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Calibration Wizard</h2>
-              <p class="panel-subtitle">Borrow the good UX, keep the strict geometry.</p>
-            </div>
-            <div class="panel-actions">
-              <button id="recalibrate-button" class="secondary">Recalibrate</button>
-              <button id="reset-button" class="secondary">Reset</button>
-            </div>
-          </div>
+    <div id="viewer-host" class="viewer-host"></div>
 
-          <div class="wizard-nav">
-            ${WIZARD_STEPS.map((step, index) => `<button data-step="${step}" class="wizard-pill">${index + 1}</button>`).join("")}
-          </div>
+    <header class="topbar">
+      <img src="/orbitr_logo.svg" alt="Orbitr" class="topbar-logo" />
+      <div class="topbar-actions">
+        <button id="settings-toggle" class="icon-button" title="Settings">&#9881;</button>
+        <button id="fullscreen-toggle" class="icon-button" title="Fullscreen">&#9974;</button>
+      </div>
+    </header>
 
-          <section data-step-panel="screen" class="wizard-step">
-            <h3>1. Screen</h3>
-            <p>Pick a monitor preset or enter custom physical dimensions in meters.</p>
-            <button id="quick-start" class="secondary wide">Quick Start (use defaults)</button>
-            <label class="field">
-              <span>Monitor Preset</span>
-              <select id="monitor-preset">
-                <option value="24_desktop">24" Desktop</option>
-                <option value="27_desktop">27" Desktop</option>
-                <option value="14_laptop">14" Laptop</option>
-                <option value="custom">Custom</option>
-              </select>
-            </label>
-            <div class="two-up">
-              ${renderCalibrationField("screenWidth", "Screen Width (m)", "0.18", "1.4", "0.001")}
-              ${renderCalibrationField("screenHeight", "Screen Height (m)", "0.1", "0.9", "0.001")}
-            </div>
-            ${renderWizardActions("screen")}
-          </section>
-
-          <section data-step-panel="webcam" class="wizard-step" hidden>
-            <h3>2. Webcam Placement</h3>
-            <p>Set the webcam offset relative to the center of the display.</p>
-            <div class="two-up">
-              ${renderCalibrationField("cameraOffsetX", "Camera Offset X (m)", "-0.5", "0.5", "0.001")}
-              ${renderCalibrationField("cameraOffsetY", "Camera Offset Y (m)", "-0.5", "0.5", "0.001")}
-            </div>
-            ${renderCalibrationField("cameraOffsetZ", "Camera Offset Z (m)", "-0.5", "0.5", "0.001")}
-            ${renderWizardActions("webcam")}
-          </section>
-
-          <section data-step-panel="distance" class="wizard-step" hidden>
-            <h3>3. Distance</h3>
-            <p>Set your typical eye-to-screen distance and smoothing. This becomes the neutral reference.</p>
-            ${renderCalibrationField("neutralDistance", "Neutral Distance (m)", "0.25", "1.8", "0.001")}
-            <button id="auto-detect-distance" class="secondary wide">Auto-detect Distance</button>
-            ${renderCalibrationField("smoothing", "Smoothing", "0", "1", "0.01")}
-            <div class="two-up">
-              ${renderCalibrationField("headSmoothing", "Head Smoothing", "0", "1", "0.01")}
-              ${renderCalibrationField("depthSmoothing", "Depth Smoothing", "0", "1", "0.01")}
-            </div>
-            ${renderCalibrationField("gazeSmoothing", "Gaze Smoothing", "0", "1", "0.01")}
-            ${renderWizardActions("distance")}
-          </section>
-
-          <section data-step-panel="tracking" class="wizard-step" hidden>
-            <h3>4. Tracking</h3>
-            <p>Start tracking, optionally show the face preview, and capture a neutral pose while seated normally.</p>
-            <label class="toggle">
-              <input id="show-face-preview" type="checkbox" />
-              <span>Show face preview</span>
-            </label>
-            <div id="face-preview-shell" class="face-preview-shell" hidden>
-              <video id="face-preview" class="face-preview" autoplay muted playsinline></video>
-              <div id="face-preview-marker" class="face-preview-marker"></div>
-            </div>
-            <button id="capture-neutral" class="secondary wide">Capture Neutral Pose</button>
-            <div id="neutral-progress" class="neutral-progress" hidden>
-              <span id="neutral-progress-text">Stable: 0 / 12 frames</span>
-            </div>
-            ${renderWizardActions("tracking")}
-          </section>
-
-          <section data-step-panel="test" class="wizard-step" hidden>
-            <h3>5. Test</h3>
-            <p>What to expect:</p>
-            <ul class="test-list">
-              <li>Move left to reveal more of the right side of objects.</li>
-              <li>Move right to reveal more of the left side.</li>
-              <li>Lean in to strengthen perspective.</li>
-              <li>Use fullscreen viewer mode for the cleanest effect.</li>
-            </ul>
-            ${renderCalibrationField("movementScale", "Parallax Intensity", "0.5", "2", "0.05")}
-            <div class="toggle-grid">
-              <label class="toggle">
-                <input id="show-presentation-room" type="checkbox" />
-                <span>Presentation room</span>
-              </label>
-              <label class="toggle">
-                <input id="show-wireframe-room" type="checkbox" />
-                <span>Wireframe room</span>
-              </label>
-              <label class="toggle">
-                <input id="show-screen-frame" type="checkbox" />
-                <span>Red screen frame</span>
-              </label>
-              <label class="toggle">
-                <input id="show-debug" type="checkbox" />
-                <span>Tracking debug</span>
-              </label>
-            </div>
-            <button id="wizard-complete" class="primary wide">Finish Calibration</button>
-          </section>
-
-          <details class="details-panel">
-            <summary>Advanced Calibration</summary>
-            <div class="controls">
-              ${renderCalibrationField("gainX", "Head Gain X", "-3", "3", "0.01")}
-              ${renderCalibrationField("gainY", "Head Gain Y", "-3", "3", "0.01")}
-              ${renderCalibrationField("gainZ", "Depth Gain", "-3", "3", "0.01")}
-              ${renderCalibrationField("eyeRefinementGain", "Eye Refinement", "-0.2", "0.2", "0.001")}
-              ${renderCalibrationField("minFaceDetectionConfidence", "Min Detection Conf", "0", "1", "0.01")}
-              ${renderCalibrationField("minFacePresenceConfidence", "Min Presence Conf", "0", "1", "0.01")}
-              ${renderCalibrationField("minTrackingConfidence", "Min Tracking Conf", "0", "1", "0.01")}
-              ${renderCalibrationField("maxEyeDeltaX", "Max Eye Delta X", "0", "1", "0.001")}
-              ${renderCalibrationField("maxEyeDeltaY", "Max Eye Delta Y", "0", "1", "0.001")}
-              ${renderCalibrationField("maxEyeDeltaZ", "Max Eye Delta Z", "0", "1", "0.001")}
-              ${renderCalibrationField("neutralCaptureStableFrames", "Stable Frames", "1", "120", "1")}
-              ${renderCalibrationField("neutralCaptureMaxOffset", "Neutral Max Offset", "0", "0.2", "0.001")}
-              ${renderCalibrationField("neutralCaptureMaxScaleDelta", "Neutral Max Scale Delta", "0", "0.2", "0.001")}
-              ${renderCalibrationField("screenOffsetX", "Screen Offset X", "-1", "1", "0.001")}
-              ${renderCalibrationField("screenOffsetY", "Screen Offset Y", "-1", "1", "0.001")}
-              ${renderCalibrationField("screenOffsetZ", "Screen Offset Z", "-1", "1", "0.001")}
-            </div>
-          </details>
-
-          <details class="details-panel">
-            <summary>Model Placement</summary>
-            <div class="controls">
-              ${renderModelField("positionX", "Model X", "-5", "5", "0.01")}
-              ${renderModelField("positionY", "Model Y", "-5", "5", "0.01")}
-              ${renderModelField("positionZ", "Model Z", "-5", "5", "0.01")}
-              ${renderModelField("rotationX", "Rotate X", "-180", "180", "1")}
-              ${renderModelField("rotationY", "Rotate Y", "-180", "180", "1")}
-              ${renderModelField("rotationZ", "Rotate Z", "-180", "180", "1")}
-              ${renderModelField("scale", "Scale", "0.1", "10", "0.01")}
-              <button id="reset-model-button" class="secondary wide">Reset Model Controls</button>
-            </div>
-          </details>
-
-          <pre id="debug-readout" class="debug-readout" hidden>No tracking data yet.</pre>
-        </aside>
-        <main id="viewer-host" class="viewer-host"></main>
-      </section>
+    <div id="status-toast" class="toast" hidden>
+      <span id="status-text">Ready</span>
     </div>
+
+    <div id="calibration-pip" class="calibration-pip" hidden>
+      <video id="face-preview" autoplay muted playsinline></video>
+      <div id="face-preview-marker" class="face-preview-marker"></div>
+    </div>
+
+    <button id="start-button" class="fab">Start</button>
+
+    <div id="drawer-backdrop" class="drawer-backdrop"></div>
+    <aside id="settings-drawer" class="drawer">
+      <div class="drawer-header">
+        <img src="/orbitr_logo.svg" alt="Orbitr" class="drawer-logo" />
+        <button id="close-drawer" class="drawer-close" title="Close">&times;</button>
+      </div>
+
+      <section class="drawer-section">
+        <h3>Screen Size</h3>
+        <div class="preset-group">
+          <button data-preset="14_laptop" class="preset-button">14" Laptop</button>
+          <button data-preset="24_desktop" class="preset-button">24" Desktop</button>
+          <button data-preset="27_desktop" class="preset-button">27" Desktop</button>
+        </div>
+        <div class="custom-diagonal">
+          <input id="screen-diagonal" type="number" placeholder="e.g. 32" min="10" max="65" step="0.5" />
+          <span>inches (custom)</span>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <h3>Parallax</h3>
+        <div class="range-field">
+          <label>
+            <span>Intensity</span>
+            <span id="movement-scale-value">1.0</span>
+          </label>
+          <input id="movement-scale" type="range" min="0.5" max="2" step="0.05" value="1" />
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <h3>Scene</h3>
+        <label class="toggle">
+          <input id="show-presentation-room" type="checkbox" />
+          <span>Presentation room</span>
+        </label>
+        <label class="toggle">
+          <input id="show-wireframe-room" type="checkbox" />
+          <span>Wireframe room</span>
+        </label>
+        <label class="toggle">
+          <input id="show-screen-frame" type="checkbox" />
+          <span>Screen frame</span>
+        </label>
+      </section>
+
+      <details class="details-panel">
+        <summary>Model Placement</summary>
+        <div class="controls">
+          ${renderModelField("positionX", "Model X", "-5", "5", "0.01")}
+          ${renderModelField("positionY", "Model Y", "-5", "5", "0.01")}
+          ${renderModelField("positionZ", "Model Z", "-5", "5", "0.01")}
+          ${renderModelField("rotationX", "Rotate X", "-180", "180", "1")}
+          ${renderModelField("rotationY", "Rotate Y", "-180", "180", "1")}
+          ${renderModelField("rotationZ", "Rotate Z", "-180", "180", "1")}
+          ${renderModelField("scale", "Scale", "0.1", "10", "0.01")}
+          <button id="reset-model-button" class="secondary wide">Reset Model</button>
+        </div>
+      </details>
+
+      <details class="details-panel">
+        <summary>Debug</summary>
+        <div class="controls">
+          <label class="toggle">
+            <input id="show-debug" type="checkbox" />
+            <span>Debug overlay</span>
+          </label>
+          <label class="toggle">
+            <input id="show-face-preview" type="checkbox" />
+            <span>Face preview</span>
+          </label>
+          <pre id="debug-readout" class="debug-readout" hidden>No tracking data yet.</pre>
+        </div>
+      </details>
+
+      <button id="reset-button" class="secondary wide">Reset All Settings</button>
+    </aside>
   `;
 
-  const canvasHost = root.querySelector<HTMLDivElement>("#viewer-host");
-  const toggleTrackingButton = root.querySelector<HTMLButtonElement>("#tracking-toggle");
-  const fullscreenButton = root.querySelector<HTMLButtonElement>("#fullscreen-toggle");
-  const captureNeutralButton = root.querySelector<HTMLButtonElement>("#capture-neutral");
-  const resetButton = root.querySelector<HTMLButtonElement>("#reset-button");
-  const recalibrateButton = root.querySelector<HTMLButtonElement>("#recalibrate-button");
-  const resetModelButton = root.querySelector<HTMLButtonElement>("#reset-model-button");
-  const wizardCompleteButton = root.querySelector<HTMLButtonElement>("#wizard-complete");
-  const status = root.querySelector<HTMLDivElement>("#status");
-  const debugToggle = root.querySelector<HTMLInputElement>("#show-debug");
-  const presentationRoomToggle = root.querySelector<HTMLInputElement>("#show-presentation-room");
-  const wireframeRoomToggle = root.querySelector<HTMLInputElement>("#show-wireframe-room");
-  const screenFrameToggle = root.querySelector<HTMLInputElement>("#show-screen-frame");
-  const facePreviewToggle = root.querySelector<HTMLInputElement>("#show-face-preview");
-  const debugReadout = root.querySelector<HTMLPreElement>("#debug-readout");
-  const quickStartButton = root.querySelector<HTMLButtonElement>("#quick-start");
-  const autoDetectDistanceButton = root.querySelector<HTMLButtonElement>("#auto-detect-distance");
-  const monitorPreset = root.querySelector<HTMLSelectElement>("#monitor-preset");
-  const previewShell = root.querySelector<HTMLDivElement>("#face-preview-shell");
-  const previewVideo = root.querySelector<HTMLVideoElement>("#face-preview");
-  const previewMarker = root.querySelector<HTMLDivElement>("#face-preview-marker");
-  const neutralProgress = root.querySelector<HTMLDivElement>("#neutral-progress");
-  const neutralProgressText = root.querySelector<HTMLSpanElement>("#neutral-progress-text");
-
-  if (
-    !canvasHost ||
-    !toggleTrackingButton ||
-    !fullscreenButton ||
-    !captureNeutralButton ||
-    !resetButton ||
-    !recalibrateButton ||
-    !resetModelButton ||
-    !wizardCompleteButton ||
-    !status ||
-    !debugToggle ||
-    !presentationRoomToggle ||
-    !wireframeRoomToggle ||
-    !screenFrameToggle ||
-    !facePreviewToggle ||
-    !debugReadout ||
-    !monitorPreset ||
-    !previewShell ||
-    !previewVideo ||
-    !previewMarker ||
-    !neutralProgress ||
-    !neutralProgressText ||
-    !quickStartButton ||
-    !autoDetectDistanceButton
-  ) {
-    throw new Error("UI mount failed: required elements not found.");
-  }
-
-  const calibrationInputs = Object.fromEntries(
-    CALIBRATION_FIELDS.map((field) => [
-      field,
-      root.querySelector<HTMLInputElement>(`[data-calibration-field="${field}"]`),
-    ])
-  ) as Record<NumericCalibrationField, HTMLInputElement | null>;
+  const canvasHost = root.querySelector<HTMLDivElement>("#viewer-host")!;
+  const startButton = root.querySelector<HTMLButtonElement>("#start-button")!;
+  const fullscreenButton = root.querySelector<HTMLButtonElement>("#fullscreen-toggle")!;
+  const settingsToggle = root.querySelector<HTMLButtonElement>("#settings-toggle")!;
+  const closeDrawer = root.querySelector<HTMLButtonElement>("#close-drawer")!;
+  const drawer = root.querySelector<HTMLElement>("#settings-drawer")!;
+  const backdrop = root.querySelector<HTMLElement>("#drawer-backdrop")!;
+  const statusToast = root.querySelector<HTMLDivElement>("#status-toast")!;
+  const statusText = root.querySelector<HTMLSpanElement>("#status-text")!;
+  const pip = root.querySelector<HTMLDivElement>("#calibration-pip")!;
+  const previewVideo = root.querySelector<HTMLVideoElement>("#face-preview")!;
+  const previewMarker = root.querySelector<HTMLDivElement>("#face-preview-marker")!;
+  const resetButton = root.querySelector<HTMLButtonElement>("#reset-button")!;
+  const resetModelButton = root.querySelector<HTMLButtonElement>("#reset-model-button")!;
+  const movementScaleInput = root.querySelector<HTMLInputElement>("#movement-scale")!;
+  const movementScaleValue = root.querySelector<HTMLSpanElement>("#movement-scale-value")!;
+  const screenDiagonalInput = root.querySelector<HTMLInputElement>("#screen-diagonal")!;
+  const presentationRoomToggle = root.querySelector<HTMLInputElement>("#show-presentation-room")!;
+  const wireframeRoomToggle = root.querySelector<HTMLInputElement>("#show-wireframe-room")!;
+  const screenFrameToggle = root.querySelector<HTMLInputElement>("#show-screen-frame")!;
+  const debugToggle = root.querySelector<HTMLInputElement>("#show-debug")!;
+  const facePreviewToggle = root.querySelector<HTMLInputElement>("#show-face-preview")!;
+  const debugReadout = root.querySelector<HTMLPreElement>("#debug-readout")!;
+  const presetButtons = root.querySelectorAll<HTMLButtonElement>("[data-preset]");
 
   const modelInputs = Object.fromEntries(
     MODEL_FIELDS.map((field) => [
@@ -334,122 +186,97 @@ export function createAppUi(
 
   let calibration = { ...initialCalibration };
   let modelTransform = { ...initialModelTransform };
-  let currentStep: WizardStep = calibration.calibrationComplete ? "test" : "screen";
+  let toastTimer = 0;
 
-  const stepButtons = WIZARD_STEPS.map((step) =>
-    root.querySelector<HTMLButtonElement>(`[data-step="${step}"]`)
-  );
-  const stepPanels = WIZARD_STEPS.map((step) =>
-    root.querySelector<HTMLElement>(`[data-step-panel="${step}"]`)
-  );
+  const openSettings = (): void => {
+    drawer.classList.add("open");
+    backdrop.classList.add("open");
+  };
 
-  const updateWizardStep = (nextStep: WizardStep): void => {
-    currentStep = nextStep;
-    WIZARD_STEPS.forEach((step, index) => {
-      stepButtons[index]?.classList.toggle("active", step === currentStep);
-      stepPanels[index]!.hidden = step !== currentStep;
+  const closeSettings = (): void => {
+    drawer.classList.remove("open");
+    backdrop.classList.remove("open");
+  };
+
+  const syncPresetButtons = (): void => {
+    presetButtons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.preset === calibration.monitorPreset);
     });
-  };
-
-  const readCalibration = (): ParallaxCalibration => {
-    let next = { ...calibration };
-    const selectedPreset = monitorPreset.value as MonitorPreset;
-    next = selectedPreset === "custom" ? { ...next, monitorPreset: "custom" } : applyMonitorPreset(next, selectedPreset);
-
-    for (const field of CALIBRATION_FIELDS) {
-      const input = calibrationInputs[field];
-      if (!input) {
-        continue;
-      }
-
-      const parsed = Number(input.value);
-      if (Number.isFinite(parsed)) {
-        next[field] = parsed;
-      }
-    }
-
-    next.showDebug = debugToggle.checked;
-    next.showPresentationRoom = presentationRoomToggle.checked;
-    next.showWireframeRoom = wireframeRoomToggle.checked;
-    next.showScreenFrame = screenFrameToggle.checked;
-    next.showFacePreview = facePreviewToggle.checked;
-    return next;
-  };
-
-  const readModelTransform = (): ModelTransform => {
-    const next = { ...modelTransform };
-    for (const field of MODEL_FIELDS) {
-      const input = modelInputs[field];
-      if (!input) {
-        continue;
-      }
-
-      const parsed = Number(input.value);
-      if (Number.isFinite(parsed)) {
-        next[field] = parsed;
-      }
-    }
-
-    return next;
   };
 
   const setCalibrationFields = (next: ParallaxCalibration): void => {
     calibration = { ...next };
-    monitorPreset.value = next.monitorPreset;
-
-    for (const field of CALIBRATION_FIELDS) {
-      const input = calibrationInputs[field];
-      if (!input) {
-        continue;
-      }
-
-      input.value = `${next[field]}`;
-      input.disabled =
-        next.monitorPreset !== "custom" && (field === "screenWidth" || field === "screenHeight");
-    }
-
-    debugToggle.checked = next.showDebug;
+    movementScaleInput.value = `${next.movementScale}`;
+    movementScaleValue.textContent = next.movementScale.toFixed(2);
     presentationRoomToggle.checked = next.showPresentationRoom;
     wireframeRoomToggle.checked = next.showWireframeRoom;
     screenFrameToggle.checked = next.showScreenFrame;
+    debugToggle.checked = next.showDebug;
     facePreviewToggle.checked = next.showFacePreview;
-    previewShell.hidden = !next.showFacePreview;
     debugReadout.hidden = !next.showDebug;
+    syncPresetButtons();
   };
 
   const setModelTransformFields = (next: ModelTransform): void => {
     modelTransform = { ...next };
     for (const field of MODEL_FIELDS) {
       const input = modelInputs[field];
-      if (input) {
-        input.value = `${next[field]}`;
-      }
+      if (input) input.value = `${next[field]}`;
     }
+  };
+
+  const readModelTransform = (): ModelTransform => {
+    const next = { ...modelTransform };
+    for (const field of MODEL_FIELDS) {
+      const input = modelInputs[field];
+      if (!input) continue;
+      const parsed = Number(input.value);
+      if (Number.isFinite(parsed)) next[field] = parsed;
+    }
+    return next;
   };
 
   setCalibrationFields(initialCalibration);
   setModelTransformFields(initialModelTransform);
-  updateWizardStep(currentStep);
 
   return {
     canvasHost,
-    toggleTrackingButton,
+    startButton,
     fullscreenButton,
-    setTrackingEnabled(enabled) {
-      toggleTrackingButton.textContent = enabled ? "Stop Tracking" : "Start Tracking";
-      toggleTrackingButton.classList.toggle("active", enabled);
+
+    setTrackingActive(active) {
+      startButton.textContent = active ? "Stop" : "Start";
+      startButton.classList.toggle("active", active);
     },
+
     setFullscreenEnabled(enabled) {
-      fullscreenButton.textContent = enabled ? "Exit Fullscreen" : "Enter Fullscreen";
-      fullscreenButton.classList.toggle("active", enabled);
+      fullscreenButton.textContent = enabled ? "\u2716" : "\u26F6";
+      fullscreenButton.title = enabled ? "Exit Fullscreen" : "Fullscreen";
     },
+
     setStatus(message, tone = "normal") {
-      status.textContent = message;
-      status.dataset.tone = tone;
+      statusText.textContent = message;
+      statusToast.hidden = false;
+      statusToast.dataset.tone = tone;
+      clearTimeout(toastTimer);
+      if (tone === "normal") {
+        toastTimer = window.setTimeout(() => {
+          statusToast.hidden = true;
+        }, 5000);
+      }
     },
+
     bindHandlers(handlers) {
       const emitCalibrationChange = (): void => {
-        calibration = readCalibration();
+        calibration = {
+          ...calibration,
+          movementScale: Number(movementScaleInput.value) || 1,
+          showPresentationRoom: presentationRoomToggle.checked,
+          showWireframeRoom: wireframeRoomToggle.checked,
+          showScreenFrame: screenFrameToggle.checked,
+          showDebug: debugToggle.checked,
+          showFacePreview: facePreviewToggle.checked,
+        };
         handlers.onCalibrationChange(calibration);
         setCalibrationFields(calibration);
       };
@@ -460,82 +287,73 @@ export function createAppUi(
         setModelTransformFields(modelTransform);
       };
 
-      monitorPreset.addEventListener("change", emitCalibrationChange);
-      for (const field of CALIBRATION_FIELDS) {
-        calibrationInputs[field]?.addEventListener("input", emitCalibrationChange);
-      }
+      settingsToggle.addEventListener("click", openSettings);
+      closeDrawer.addEventListener("click", closeSettings);
+      backdrop.addEventListener("click", closeSettings);
+
+      presetButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const preset = btn.dataset.preset as MonitorPreset;
+          calibration = applyMonitorPreset(calibration, preset);
+          handlers.onCalibrationChange(calibration);
+          setCalibrationFields(calibration);
+        });
+      });
+
+      screenDiagonalInput.addEventListener("change", () => {
+        const inches = Number(screenDiagonalInput.value);
+        if (!Number.isFinite(inches) || inches < 10 || inches > 65) return;
+        const dims = screenDimensionsFromDiagonal(inches);
+        calibration = {
+          ...calibration,
+          monitorPreset: "custom" as MonitorPreset,
+          screenWidth: dims.width,
+          screenHeight: dims.height,
+        };
+        handlers.onCalibrationChange(calibration);
+        setCalibrationFields(calibration);
+      });
+
+      movementScaleInput.addEventListener("input", () => {
+        movementScaleValue.textContent = Number(movementScaleInput.value).toFixed(2);
+        emitCalibrationChange();
+      });
+
+      presentationRoomToggle.addEventListener("change", emitCalibrationChange);
+      wireframeRoomToggle.addEventListener("change", emitCalibrationChange);
+      screenFrameToggle.addEventListener("change", emitCalibrationChange);
+      debugToggle.addEventListener("change", emitCalibrationChange);
+      facePreviewToggle.addEventListener("change", emitCalibrationChange);
+
       for (const field of MODEL_FIELDS) {
         modelInputs[field]?.addEventListener("input", emitModelTransformChange);
       }
 
-      debugToggle.addEventListener("change", emitCalibrationChange);
-      presentationRoomToggle.addEventListener("change", emitCalibrationChange);
-      wireframeRoomToggle.addEventListener("change", emitCalibrationChange);
-      screenFrameToggle.addEventListener("change", emitCalibrationChange);
-      facePreviewToggle.addEventListener("change", emitCalibrationChange);
-
-      captureNeutralButton.addEventListener("click", handlers.onCaptureNeutral);
-      autoDetectDistanceButton.addEventListener("click", handlers.onAutoDetectDistance);
-      quickStartButton.addEventListener("click", () => {
-        updateWizardStep("tracking");
-      });
-      resetButton.addEventListener("click", handlers.onResetState);
-      recalibrateButton.addEventListener("click", () => {
-        calibration = { ...calibration, calibrationComplete: false };
-        handlers.onCalibrationChange(calibration);
-        updateWizardStep("screen");
-      });
       resetModelButton.addEventListener("click", () => {
         modelTransform = { ...DEFAULT_MODEL_TRANSFORM };
         handlers.onModelTransformChange(modelTransform);
         setModelTransformFields(modelTransform);
       });
-      wizardCompleteButton.addEventListener("click", () => {
-        calibration = { ...calibration, calibrationComplete: true };
-        handlers.onCalibrationChange(calibration);
-      });
 
-      root.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((button) => {
-        button.addEventListener("click", () => {
-          updateWizardStep(button.dataset.step as WizardStep);
-        });
-      });
-
-      root.querySelectorAll<HTMLButtonElement>("[data-nav-next]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const currentIndex = WIZARD_STEPS.indexOf(button.dataset.navNext as WizardStep);
-          updateWizardStep(WIZARD_STEPS[Math.min(WIZARD_STEPS.length - 1, currentIndex + 1)]);
-        });
-      });
-
-      root.querySelectorAll<HTMLButtonElement>("[data-nav-back]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const currentIndex = WIZARD_STEPS.indexOf(button.dataset.navBack as WizardStep);
-          updateWizardStep(WIZARD_STEPS[Math.max(0, currentIndex - 1)]);
-        });
+      resetButton.addEventListener("click", () => {
+        closeSettings();
+        handlers.onResetState();
       });
     },
+
     setCalibration(next) {
       setCalibrationFields(next);
-      if (next.calibrationComplete && currentStep !== "test") {
-        updateWizardStep("test");
-      }
     },
+
     setModelTransform(next) {
       setModelTransformFields(next);
     },
+
     setPreviewStream(stream) {
       previewVideo.srcObject = stream;
-      previewShell.hidden = !calibration.showFacePreview || stream === null;
+      pip.hidden = stream === null;
     },
-    updateNeutralProgress(stableFrameCount, requiredFrames) {
-      if (requiredFrames <= 0) {
-        neutralProgress.hidden = true;
-        return;
-      }
-      neutralProgress.hidden = false;
-      neutralProgressText.textContent = `Stable: ${Math.min(stableFrameCount, requiredFrames)} / ${requiredFrames} frames`;
-    },
+
     updateDebugPose(pose, screenRect) {
       if (pose) {
         previewMarker.style.left = `${(1 - pose.debug.headCenterX) * 100}%`;
@@ -571,27 +389,17 @@ export function createAppUi(
             `trackingConf: ${pose.debug.trackingConfidence.toFixed(3)}`,
             `windowWidth: ${screenRect?.width.toFixed(3) ?? "0.000"}`,
             `windowHeight: ${screenRect?.height.toFixed(3) ?? "0.000"}`,
-            `windowCenterX: ${screenRect?.centerX.toFixed(3) ?? "0.000"}`,
-            `windowCenterY: ${screenRect?.centerY.toFixed(3) ?? "0.000"}`,
           ].join("\n")
         : "No tracking data yet.";
     },
-  };
-}
 
-function renderCalibrationField(
-  field: NumericCalibrationField,
-  label: string,
-  min: string,
-  max: string,
-  step: string
-): string {
-  return `
-    <label class="field">
-      <span>${label}</span>
-      <input data-calibration-field="${field}" type="number" min="${min}" max="${max}" step="${step}" />
-    </label>
-  `;
+    updateNeutralProgress() {
+      // Progress is now shown via toast messages from the auto-calibrator
+    },
+
+    openSettings,
+    closeSettings,
+  };
 }
 
 function renderModelField(
@@ -606,24 +414,5 @@ function renderModelField(
       <span>${label}</span>
       <input data-model-field="${field}" type="number" min="${min}" max="${max}" step="${step}" />
     </label>
-  `;
-}
-
-function renderWizardActions(step: WizardStep): string {
-  const isFirst = step === "screen";
-  const isLast = step === "tracking";
-  return `
-    <div class="wizard-actions">
-      ${
-        isFirst
-          ? ""
-          : `<button data-nav-back="${step}" class="secondary">Back</button>`
-      }
-      ${
-        isLast
-          ? `<button data-nav-next="${step}" class="primary">Continue to Test</button>`
-          : `<button data-nav-next="${step}" class="primary">Next</button>`
-      }
-    </div>
   `;
 }

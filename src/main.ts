@@ -4,7 +4,8 @@ import {
   resetViewerState,
   saveViewerState,
 } from "./lib/calibrationStorage";
-import { DEFAULT_MODEL_TRANSFORM } from "./lib/parallaxConfig";
+import { AutoCalibrator, guessMonitorPreset } from "./lib/autoCalibrate";
+import { applyMonitorPreset, DEFAULT_MODEL_TRANSFORM } from "./lib/parallaxConfig";
 import { parseViewerUrlParams } from "./lib/urlParams";
 import { loadViewerModel } from "./model/loadModel";
 import { FaceTracker, type TrackingDiagnostics } from "./tracking/faceTracker";
@@ -33,12 +34,10 @@ async function enterFullscreen(element: HTMLElement): Promise<void> {
     await fullscreenElement.requestFullscreen();
     return;
   }
-
   if (fullscreenElement.webkitRequestFullscreen) {
     await fullscreenElement.webkitRequestFullscreen();
     return;
   }
-
   throw new Error("This browser does not support fullscreen mode for this element.");
 }
 
@@ -48,12 +47,10 @@ async function exitFullscreen(): Promise<void> {
     await document.exitFullscreen();
     return;
   }
-
   if (fullscreenDocument.webkitExitFullscreen) {
     await fullscreenDocument.webkitExitFullscreen();
     return;
   }
-
   throw new Error("This browser does not support exiting fullscreen mode.");
 }
 
@@ -64,6 +61,16 @@ async function bootstrap(): Promise<void> {
   }
 
   let persistedState = loadViewerState();
+
+  // Auto-detect monitor preset if not already calibrated
+  if (!persistedState.calibration.calibrationComplete) {
+    const guessed = guessMonitorPreset();
+    persistedState = {
+      ...persistedState,
+      calibration: applyMonitorPreset(persistedState.calibration, guessed),
+    };
+  }
+
   const params = parseViewerUrlParams(window.location.search, persistedState);
   let calibration = params.calibration;
   let modelTransform = params.modelTransform;
@@ -82,18 +89,12 @@ async function bootstrap(): Promise<void> {
   ui.setModelTransform(modelTransform);
   viewer.setModel(loadedModel.model);
   let latestDebugPose: ViewerPose | null = null;
-  const faceMeshOverlay = new FaceMeshOverlay(
-    app.querySelector<HTMLElement>("#face-preview-shell")!
-  );
+
+  const pipElement = app.querySelector<HTMLElement>("#calibration-pip");
+  const faceMeshOverlay = pipElement ? new FaceMeshOverlay(pipElement) : null;
 
   if (loadedModel.warning) {
     ui.setStatus(loadedModel.warning, "warning");
-  } else {
-    ui.setStatus(
-      calibration.calibrationComplete
-        ? `Loaded model: ${loadedModel.resolvedUrl}. Re-open the wizard any time to refine calibration.`
-        : `Loaded model: ${loadedModel.resolvedUrl}. Run the wizard, then capture a neutral pose.`
-    );
   }
 
   const persist = (): void => {
@@ -101,6 +102,14 @@ async function bootstrap(): Promise<void> {
   };
 
   persist();
+
+  const applyCalibration = (next: typeof calibration): void => {
+    calibration = next;
+    viewer.setCalibration(next);
+    tracker.updateCalibration(next);
+    ui.setCalibration(next);
+    persist();
+  };
 
   const applyModelTransform = (next: typeof modelTransform): void => {
     modelTransform = next;
@@ -114,7 +123,6 @@ async function bootstrap(): Promise<void> {
       onFrame(frame) {
         latestDebugPose = frame;
         viewer.setViewerPose(frame);
-        ui.updateDebugPose(frame, viewer.getEffectiveScreenRect());
       },
       onError(message) {
         ui.setStatus(message, "error");
@@ -122,90 +130,61 @@ async function bootstrap(): Promise<void> {
       onPreviewStream(stream) {
         ui.setPreviewStream(stream);
         if (!stream) {
-          faceMeshOverlay.clear();
+          faceMeshOverlay?.clear();
         }
       },
       onLandmarks(landmarks) {
         if (calibration.showFacePreview) {
-          faceMeshOverlay.draw(landmarks);
+          faceMeshOverlay?.draw(landmarks);
         }
       },
       onDiagnostics(diagnostics: TrackingDiagnostics) {
-        if (!tracker.isRunning()) {
-          return;
-        }
+        if (!tracker.isRunning()) return;
 
-        ui.updateNeutralProgress(
-          diagnostics.stableFrameCount,
-          calibration.neutralCaptureStableFrames
-        );
+        // Let the auto-calibrator handle diagnostics during calibration
+        autoCalibrator.handleDiagnostics(diagnostics);
 
-        if (diagnostics.mode === "tracking") {
-          ui.setStatus(
-            calibration.calibrationComplete
-              ? `${diagnostics.message} Close one eye and test left/right motion.`
-              : `${diagnostics.message} Capture a neutral pose when you are seated normally.`
-          );
-          return;
-        }
-
-        if (diagnostics.mode === "invalid") {
-          ui.setStatus(diagnostics.message, "warning");
-          return;
-        }
-
-        if (diagnostics.mode === "searching") {
-          ui.setStatus(diagnostics.message, "warning");
+        // After calibration is done, show live status
+        if (!autoCalibrator.isCalibrating()) {
+          if (diagnostics.mode === "invalid") {
+            ui.setStatus(diagnostics.message, "warning");
+          } else if (diagnostics.mode === "searching") {
+            ui.setStatus("Looking for your face...", "warning");
+          }
         }
       },
     },
     calibration
   );
 
+  const autoCalibrator = new AutoCalibrator(tracker, calibration, {
+    onPhaseChange(phase, message) {
+      if (phase === "failed") {
+        ui.setStatus(message, "error");
+        ui.setTrackingActive(false);
+        viewer.setTrackingEnabled(false);
+      } else {
+        ui.setStatus(message);
+      }
+    },
+    onCalibrationUpdate(next) {
+      applyCalibration(next);
+    },
+    onReady() {
+      viewer.setTrackingEnabled(true);
+      ui.setTrackingActive(true);
+      ui.setStatus("Ready! Move around to see the effect.");
+    },
+    onFailed(reason) {
+      ui.setStatus(reason, "error");
+      ui.setTrackingActive(false);
+    },
+  });
+
   ui.bindHandlers({
     onCalibrationChange(next) {
-      calibration = next;
-      viewer.setCalibration(next);
-      tracker.updateCalibration(next);
-      ui.setCalibration(next);
-      persist();
-    },
-    onAutoDetectDistance() {
-      const faceWidth = tracker.getLatestFaceWidth();
-      if (!faceWidth || faceWidth < 0.01) {
-        ui.setStatus("Start tracking first so a face can be measured.", "warning");
-        return;
-      }
-      // Average adult face is ~0.15m wide; estimate distance from normalized face width.
-      // Assumes a typical webcam horizontal FOV of ~60 degrees.
-      const FACE_WIDTH_METERS = 0.15;
-      const ASSUMED_HFOV_RAD = (60 * Math.PI) / 180;
-      const estimatedDistance =
-        (FACE_WIDTH_METERS / (2 * faceWidth * Math.tan(ASSUMED_HFOV_RAD / 2)));
-      const clamped = Math.max(0.25, Math.min(1.8, estimatedDistance));
-      calibration = { ...calibration, neutralDistance: clamped };
-      viewer.setCalibration(calibration);
-      tracker.updateCalibration(calibration);
-      ui.setCalibration(calibration);
-      persist();
-      ui.setStatus(`Auto-detected viewing distance: ${clamped.toFixed(2)} m`);
-    },
-    onCaptureNeutral() {
-      const captured = tracker.captureNeutralPose();
-      if (captured) {
-        calibration = { ...calibration, calibrationComplete: true };
-        viewer.setCalibration(calibration);
-        tracker.updateCalibration(calibration);
-        ui.setCalibration(calibration);
-        persist();
-      }
-
-      ui.setStatus(
-        captured
-          ? "Neutral pose captured. Close one eye and test left/right and near/far motion."
-          : "Tracking must be active before neutral pose can be captured.",
-        captured ? "normal" : "warning"
-      );
+      applyCalibration(next);
+      autoCalibrator.updateCalibration(next);
     },
     onModelTransformChange(next) {
       applyModelTransform(next);
@@ -217,17 +196,17 @@ async function bootstrap(): Promise<void> {
       viewer.setCalibration(calibration);
       viewer.setModelTransform(modelTransform);
       tracker.updateCalibration(calibration);
+      autoCalibrator.updateCalibration(calibration);
       ui.setCalibration(calibration);
       ui.setModelTransform(modelTransform);
-      ui.setStatus("Calibration and model controls were reset to defaults.");
+      ui.setStatus("All settings reset to defaults.");
     },
   });
 
+  // Fullscreen
   const syncFullscreenButton = (): void => {
     ui.setFullscreenEnabled(getFullscreenElement() === ui.canvasHost);
-    requestAnimationFrame(() => {
-      viewer.resize();
-    });
+    requestAnimationFrame(() => viewer.resize());
   };
 
   ui.fullscreenButton.addEventListener("click", async () => {
@@ -249,15 +228,13 @@ async function bootstrap(): Promise<void> {
   document.addEventListener("webkitfullscreenchange", syncFullscreenButton as EventListener);
   syncFullscreenButton();
 
+  // Drag & scroll model positioning
   let dragPointerId: number | null = null;
   let lastPointerX = 0;
   let lastPointerY = 0;
 
   ui.canvasHost.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) {
-      return;
-    }
-
+    if (event.button !== 0) return;
     dragPointerId = event.pointerId;
     lastPointerX = event.clientX;
     lastPointerY = event.clientY;
@@ -266,20 +243,15 @@ async function bootstrap(): Promise<void> {
   });
 
   ui.canvasHost.addEventListener("pointermove", (event) => {
-    if (dragPointerId !== event.pointerId) {
-      return;
-    }
-
+    if (dragPointerId !== event.pointerId) return;
     const rect = ui.canvasHost.getBoundingClientRect();
     const effectiveScreen = viewer.getEffectiveScreenRect();
     const deltaX = event.clientX - lastPointerX;
     const deltaY = event.clientY - lastPointerY;
     lastPointerX = event.clientX;
     lastPointerY = event.clientY;
-
     const moveX = (deltaX / Math.max(1, rect.width)) * effectiveScreen.width;
     const moveY = (-deltaY / Math.max(1, rect.height)) * effectiveScreen.height;
-
     applyModelTransform({
       ...modelTransform,
       positionX: modelTransform.positionX + moveX,
@@ -288,10 +260,7 @@ async function bootstrap(): Promise<void> {
   });
 
   const endDrag = (event: PointerEvent): void => {
-    if (dragPointerId !== event.pointerId) {
-      return;
-    }
-
+    if (dragPointerId !== event.pointerId) return;
     ui.canvasHost.releasePointerCapture(event.pointerId);
     dragPointerId = null;
     delete ui.canvasHost.dataset.dragging;
@@ -313,32 +282,25 @@ async function bootstrap(): Promise<void> {
     { passive: false }
   );
 
-  ui.toggleTrackingButton.addEventListener("click", async () => {
+  // Start / Stop FAB
+  ui.startButton.addEventListener("click", async () => {
     if (tracker.isRunning()) {
       tracker.stop();
-      ui.setTrackingEnabled(false);
+      autoCalibrator.stop();
+      ui.setTrackingActive(false);
       viewer.setTrackingEnabled(false);
       latestDebugPose = null;
       ui.updateDebugPose(null, viewer.getEffectiveScreenRect());
-      ui.setStatus("Tracking stopped. Viewer returned to the calibrated neutral eye position.");
+      ui.setStatus("Tracking stopped.");
       return;
     }
 
-    try {
-      await tracker.start();
-      ui.setTrackingEnabled(true);
-      viewer.setTrackingEnabled(true);
-      ui.setStatus(
-        getFullscreenElement() === ui.canvasHost
-          ? "Tracking active. Capture neutral pose, then test the window illusion."
-          : "Tracking active. Fullscreen is recommended before judging the illusion."
-      );
-    } catch {
-      ui.setTrackingEnabled(false);
-      viewer.setTrackingEnabled(false);
-    }
+    ui.startButton.disabled = true;
+    await autoCalibrator.run(calibration.calibrationComplete);
+    ui.startButton.disabled = false;
   });
 
+  // Render loop
   const animate = (): void => {
     viewer.frame();
     ui.updateDebugPose(latestDebugPose, viewer.getEffectiveScreenRect());
