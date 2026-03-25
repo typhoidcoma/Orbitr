@@ -88,7 +88,7 @@ export class Viewer {
 
     this.renderer = new WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight, false);
     this.renderer.setClearColor(new Color("#000000"));
     container.append(this.renderer.domElement);
 
@@ -184,7 +184,7 @@ export class Viewer {
     this.viewportWidth = Math.max(1, this.container.clientWidth);
     this.viewportHeight = Math.max(1, this.container.clientHeight);
     this.camera.aspect = this.viewportWidth / this.viewportHeight;
-    this.renderer.setSize(this.viewportWidth, this.viewportHeight);
+    this.renderer.setSize(this.viewportWidth, this.viewportHeight, false);
     this.layoutScene();
     this.applyOffAxisProjection();
   };
@@ -312,8 +312,11 @@ export class Viewer {
   }
 
   private computeEffectiveScreenRect(): EffectiveScreenRect {
+    // The frustum aspect MUST match the canvas aspect to avoid distortion.
+    // Use the physical screen width as anchor; derive height from viewport aspect.
+    const viewportAspect = this.viewportWidth / Math.max(1, this.viewportHeight);
     const width = Math.max(1, this.calibration.screenWidth);
-    const height = Math.max(1, this.calibration.screenHeight);
+    const height = Math.max(1, width / viewportAspect);
     const centerX = this.calibration.screenOffsetX;
     const centerY = this.calibration.screenOffsetY;
     const z = this.calibration.screenOffsetZ;
@@ -398,8 +401,9 @@ function degToRad(value: number): number {
 }
 
 function createFallbackScreenRect(calibration: ParallaxCalibration): EffectiveScreenRect {
+  const viewportAspect = window.innerWidth / Math.max(1, window.innerHeight);
   const width = calibration.screenWidth;
-  const height = calibration.screenHeight;
+  const height = width / viewportAspect;
   const centerX = calibration.screenOffsetX;
   const centerY = calibration.screenOffsetY;
   const z = calibration.screenOffsetZ;
