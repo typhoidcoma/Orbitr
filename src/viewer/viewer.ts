@@ -35,6 +35,8 @@ export class Viewer {
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
   private readonly renderer: WebGLRenderer;
+  private readonly container: HTMLElement;
+  private readonly resizeObserver: ResizeObserver | null;
   private readonly rootGroup = new Group();
   private readonly frustumMatrix = new Matrix4();
   private readonly config: ViewerConfig;
@@ -49,6 +51,7 @@ export class Viewer {
   private trackingEnabled = false;
 
   constructor(container: HTMLElement, config: ViewerConfig) {
+    this.container = container;
     this.config = config;
     this.calibration = config.calibration;
 
@@ -89,7 +92,15 @@ export class Viewer {
     this.addDefaultHelpers();
     this.layoutScene();
 
+    this.resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            this.handleResize();
+          });
+
     window.addEventListener("resize", this.handleResize);
+    this.resizeObserver?.observe(this.container);
     this.handleResize();
   }
 
@@ -147,13 +158,8 @@ export class Viewer {
   }
 
   private handleResize = (): void => {
-    const parent = this.renderer.domElement.parentElement;
-    if (!parent) {
-      return;
-    }
-
-    const width = Math.max(1, parent.clientWidth);
-    const height = Math.max(1, parent.clientHeight);
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
     this.camera.aspect = width / height;
     this.applyOffAxisProjection();
     this.renderer.setSize(width, height, false);
@@ -205,6 +211,7 @@ export class Viewer {
 
   public dispose(): void {
     window.removeEventListener("resize", this.handleResize);
+    this.resizeObserver?.disconnect();
     this.renderer.dispose();
   }
 
