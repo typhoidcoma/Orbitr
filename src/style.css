@@ -216,11 +216,8 @@ body {
 }
 
 .viewer-host:fullscreen {
-  position: fixed;
-  inset: 0;
   width: 100vw;
   height: 100vh;
-  min-height: 100vh;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -228,6 +225,20 @@ body {
 }
 
 .viewer-host:fullscreen canvas {
+  width: 100vw;
+  height: 100vh;
+}
+
+.viewer-host:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #000;
+}
+
+.viewer-host:-webkit-full-screen canvas {
   width: 100vw;
   height: 100vh;
 }

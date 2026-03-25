@@ -46,6 +46,8 @@ export class Viewer {
   private readonly roomGroup = new Group();
   private readonly roomShell: Mesh;
   private calibration: ParallaxCalibration;
+  private viewportWidth = 1;
+  private viewportHeight = 1;
   private targetPose: ViewerPose = createNeutralViewerPose();
   private smoothedPose: ViewerPose = createNeutralViewerPose();
   private trackingEnabled = false;
@@ -131,9 +133,10 @@ export class Viewer {
   }
 
   private applyOffAxisProjection(): void {
+    const screen = this.getEffectiveScreenDimensions();
     const frustum = computeOffAxisFrustum({
-      screenWidth: this.calibration.screenWidth,
-      screenHeight: this.calibration.screenHeight,
+      screenWidth: screen.width,
+      screenHeight: screen.height,
       near: this.config.near,
       far: this.config.far,
       eyeX: this.camera.position.x,
@@ -158,11 +161,12 @@ export class Viewer {
   }
 
   private handleResize = (): void => {
-    const width = Math.max(1, this.container.clientWidth);
-    const height = Math.max(1, this.container.clientHeight);
-    this.camera.aspect = width / height;
+    this.viewportWidth = Math.max(1, this.container.clientWidth);
+    this.viewportHeight = Math.max(1, this.container.clientHeight);
+    this.camera.aspect = this.viewportWidth / this.viewportHeight;
+    this.layoutScene();
     this.applyOffAxisProjection();
-    this.renderer.setSize(width, height, false);
+    this.renderer.setSize(this.viewportWidth, this.viewportHeight, false);
   };
 
   public resize(): void {
@@ -216,13 +220,14 @@ export class Viewer {
   }
 
   private layoutScene(): void {
-    const roomDepth = Math.max(1.4, this.calibration.screenWidth * 2.6);
-    const roomHeight = this.calibration.screenHeight * 2.2;
-    const roomWidth = this.calibration.screenWidth * 2.4;
+    const screen = this.getEffectiveScreenDimensions();
+    const roomDepth = Math.max(1.4, screen.width * 2.6);
+    const roomHeight = screen.height * 2.2;
+    const roomWidth = screen.width * 2.4;
 
     this.rootGroup.position.set(
       this.calibration.screenOffsetX,
-      this.calibration.screenOffsetY - this.calibration.screenHeight * 0.28,
+      this.calibration.screenOffsetY - screen.height * 0.28,
       this.calibration.screenOffsetZ - roomDepth * 0.42
     );
 
@@ -232,15 +237,15 @@ export class Viewer {
       this.calibration.screenOffsetZ
     );
     this.screenPlane.scale.set(
-      this.calibration.screenWidth,
-      this.calibration.screenHeight,
+      screen.width,
+      screen.height,
       1
     );
     this.windowBox.visible = this.calibration.showWindowBox;
     this.windowBox.scale.set(
-      this.calibration.screenWidth,
-      this.calibration.screenHeight,
-      Math.max(0.4, this.calibration.screenWidth)
+      screen.width,
+      screen.height,
+      Math.max(0.4, screen.width)
     );
 
     this.roomGroup.position.set(
@@ -249,6 +254,31 @@ export class Viewer {
       this.calibration.screenOffsetZ - roomDepth * 0.5
     );
     this.roomShell.scale.set(roomWidth, roomHeight, roomDepth);
+  }
+
+  private getEffectiveScreenDimensions(): { width: number; height: number } {
+    if (!this.isFullscreenViewportDriven()) {
+      return {
+        width: this.calibration.screenWidth,
+        height: this.calibration.screenHeight,
+      };
+    }
+
+    const aspect = this.viewportWidth / this.viewportHeight;
+    const diagonal = Math.hypot(this.calibration.screenWidth, this.calibration.screenHeight);
+    const height = diagonal / Math.sqrt(aspect * aspect + 1);
+    const width = height * aspect;
+
+    return { width, height };
+  }
+
+  private isFullscreenViewportDriven(): boolean {
+    const fullscreenElement =
+      document.fullscreenElement ??
+      (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement ??
+      null;
+
+    return fullscreenElement === this.container;
   }
 }
 

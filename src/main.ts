@@ -5,6 +5,50 @@ import { FaceTracker } from "./tracking/faceTracker";
 import { createAppUi } from "./ui/appUi";
 import { Viewer } from "./viewer/viewer";
 
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+function getFullscreenElement(): Element | null {
+  const fullscreenDocument = document as FullscreenDocument;
+  return document.fullscreenElement ?? fullscreenDocument.webkitFullscreenElement ?? null;
+}
+
+async function enterFullscreen(element: HTMLElement): Promise<void> {
+  const fullscreenElement = element as FullscreenElement;
+  if (fullscreenElement.requestFullscreen) {
+    await fullscreenElement.requestFullscreen();
+    return;
+  }
+
+  if (fullscreenElement.webkitRequestFullscreen) {
+    await fullscreenElement.webkitRequestFullscreen();
+    return;
+  }
+
+  throw new Error("This browser does not support fullscreen mode for this element.");
+}
+
+async function exitFullscreen(): Promise<void> {
+  const fullscreenDocument = document as FullscreenDocument;
+  if (document.exitFullscreen) {
+    await document.exitFullscreen();
+    return;
+  }
+
+  if (fullscreenDocument.webkitExitFullscreen) {
+    await fullscreenDocument.webkitExitFullscreen();
+    return;
+  }
+
+  throw new Error("This browser does not support exiting fullscreen mode.");
+}
+
 async function bootstrap(): Promise<void> {
   const app = document.querySelector<HTMLElement>("#app");
   if (!app) {
@@ -61,7 +105,7 @@ async function bootstrap(): Promise<void> {
   });
 
   const syncFullscreenButton = (): void => {
-    ui.setFullscreenEnabled(document.fullscreenElement === ui.canvasHost);
+    ui.setFullscreenEnabled(getFullscreenElement() === ui.canvasHost);
     requestAnimationFrame(() => {
       viewer.resize();
     });
@@ -69,10 +113,10 @@ async function bootstrap(): Promise<void> {
 
   ui.fullscreenButton.addEventListener("click", async () => {
     try {
-      if (document.fullscreenElement === ui.canvasHost) {
-        await document.exitFullscreen();
+      if (getFullscreenElement() === ui.canvasHost) {
+        await exitFullscreen();
       } else {
-        await ui.canvasHost.requestFullscreen();
+        await enterFullscreen(ui.canvasHost);
       }
     } catch (error) {
       ui.setStatus(
@@ -83,6 +127,7 @@ async function bootstrap(): Promise<void> {
   });
 
   document.addEventListener("fullscreenchange", syncFullscreenButton);
+  document.addEventListener("webkitfullscreenchange", syncFullscreenButton as EventListener);
   syncFullscreenButton();
 
   ui.toggleTrackingButton.addEventListener("click", async () => {
@@ -100,7 +145,7 @@ async function bootstrap(): Promise<void> {
       ui.setTrackingEnabled(true);
       viewer.setTrackingEnabled(true);
       ui.setStatus(
-        document.fullscreenElement === ui.canvasHost
+        getFullscreenElement() === ui.canvasHost
           ? "Tracking active. Hold your usual viewing position, then click Capture Neutral Pose."
           : "Tracking active. Fullscreen is recommended for the best window illusion, then click Capture Neutral Pose."
       );
@@ -119,6 +164,7 @@ async function bootstrap(): Promise<void> {
 
   window.addEventListener("beforeunload", () => {
     document.removeEventListener("fullscreenchange", syncFullscreenButton);
+    document.removeEventListener("webkitfullscreenchange", syncFullscreenButton as EventListener);
     tracker.stop();
     viewer.dispose();
   });
