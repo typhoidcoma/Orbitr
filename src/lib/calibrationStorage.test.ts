@@ -26,12 +26,12 @@ describe("calibrationStorage", () => {
       {
         ...DEFAULT_PARALLAX_CALIBRATION,
         monitorPreset: "custom",
-        screenWidth: 0.44,
+        screenWidth: 44,
         calibrationComplete: true,
       },
       {
         ...DEFAULT_MODEL_TRANSFORM,
-        positionX: 1.2,
+        positionX: 12,
         scale: 2,
       }
     );
@@ -39,9 +39,9 @@ describe("calibrationStorage", () => {
     const restored = loadViewerState();
 
     expect(restored.calibration.monitorPreset).toBe("custom");
-    expect(restored.calibration.screenWidth).toBe(0.44);
+    expect(restored.calibration.screenWidth).toBe(44);
     expect(restored.calibration.calibrationComplete).toBe(true);
-    expect(restored.modelTransform.positionX).toBe(1.2);
+    expect(restored.modelTransform.positionX).toBe(12);
     expect(restored.modelTransform.scale).toBe(2);
   });
 
@@ -49,7 +49,7 @@ describe("calibrationStorage", () => {
     saveViewerState(
       {
         ...DEFAULT_PARALLAX_CALIBRATION,
-        screenWidth: 0.9,
+        screenWidth: 90,
       },
       {
         ...DEFAULT_MODEL_TRANSFORM,

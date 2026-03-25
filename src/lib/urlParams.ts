@@ -46,29 +46,29 @@ export function parseViewerUrlParams(
 
   const calibration: ParallaxCalibration = {
     ...presetBase,
-    screenWidth: parseFiniteNumber(params.get("screenWidth"), presetBase.screenWidth, 0.18, 1.4),
-    screenHeight: parseFiniteNumber(params.get("screenHeight"), presetBase.screenHeight, 0.1, 0.9),
+    screenWidth: parseFiniteNumber(params.get("screenWidth"), presetBase.screenWidth, 18, 140),
+    screenHeight: parseFiniteNumber(params.get("screenHeight"), presetBase.screenHeight, 10, 90),
     neutralDistance: parseFiniteNumber(
       params.get("neutralDistance"),
       presetBase.neutralDistance,
-      0.25,
-      1.8
+      25,
+      180
     ),
-    gainX: parseFiniteNumber(params.get("gainX"), presetBase.gainX, -3, 3),
-    gainY: parseFiniteNumber(params.get("gainY"), presetBase.gainY, -3, 3),
-    gainZ: parseFiniteNumber(params.get("gainZ"), presetBase.gainZ, -3, 3),
+    gainX: parseFiniteNumber(params.get("gainX"), presetBase.gainX, -5, 5),
+    gainY: parseFiniteNumber(params.get("gainY"), presetBase.gainY, -5, 5),
+    gainZ: parseFiniteNumber(params.get("gainZ"), presetBase.gainZ, -5, 5),
     eyeRefinementGain: parseFiniteNumber(
       params.get("eyeRefinementGain"),
       presetBase.eyeRefinementGain,
-      -0.2,
-      0.2
+      -20,
+      20
     ),
-    screenOffsetX: parseFiniteNumber(params.get("screenOffsetX"), presetBase.screenOffsetX, -1, 1),
-    screenOffsetY: parseFiniteNumber(params.get("screenOffsetY"), presetBase.screenOffsetY, -1, 1),
-    screenOffsetZ: parseFiniteNumber(params.get("screenOffsetZ"), presetBase.screenOffsetZ, -1, 1),
-    cameraOffsetX: parseFiniteNumber(params.get("cameraOffsetX"), presetBase.cameraOffsetX, -0.5, 0.5),
-    cameraOffsetY: parseFiniteNumber(params.get("cameraOffsetY"), presetBase.cameraOffsetY, -0.5, 0.5),
-    cameraOffsetZ: parseFiniteNumber(params.get("cameraOffsetZ"), presetBase.cameraOffsetZ, -0.5, 0.5),
+    screenOffsetX: parseFiniteNumber(params.get("screenOffsetX"), presetBase.screenOffsetX, -100, 100),
+    screenOffsetY: parseFiniteNumber(params.get("screenOffsetY"), presetBase.screenOffsetY, -100, 100),
+    screenOffsetZ: parseFiniteNumber(params.get("screenOffsetZ"), presetBase.screenOffsetZ, -100, 100),
+    cameraOffsetX: parseFiniteNumber(params.get("cameraOffsetX"), presetBase.cameraOffsetX, -50, 50),
+    cameraOffsetY: parseFiniteNumber(params.get("cameraOffsetY"), presetBase.cameraOffsetY, -50, 50),
+    cameraOffsetZ: parseFiniteNumber(params.get("cameraOffsetZ"), presetBase.cameraOffsetZ, -50, 50),
     smoothing: parseFiniteNumber(params.get("smoothing"), presetBase.smoothing, 0, 1),
     movementScale: parseFiniteNumber(params.get("movementScale"), presetBase.movementScale, 0.5, 2),
     showDebug: params.get("debug") === null ? presetBase.showDebug : params.get("debug") === "1",
@@ -97,9 +97,9 @@ export function parseViewerUrlParams(
 
   const transformBase = baseState.modelTransform;
   const modelTransform: ModelTransform = {
-    positionX: parseFiniteNumber(params.get("modelX"), transformBase.positionX, -5, 5),
-    positionY: parseFiniteNumber(params.get("modelY"), transformBase.positionY, -5, 5),
-    positionZ: parseFiniteNumber(params.get("modelZ"), transformBase.positionZ, -5, 5),
+    positionX: parseFiniteNumber(params.get("modelX"), transformBase.positionX, -500, 500),
+    positionY: parseFiniteNumber(params.get("modelY"), transformBase.positionY, -500, 500),
+    positionZ: parseFiniteNumber(params.get("modelZ"), transformBase.positionZ, -500, 500),
     rotationX: parseFiniteNumber(params.get("modelRotX"), transformBase.rotationX, -180, 180),
     rotationY: parseFiniteNumber(params.get("modelRotY"), transformBase.rotationY, -180, 180),
     rotationZ: parseFiniteNumber(params.get("modelRotZ"), transformBase.rotationZ, -180, 180),
@@ -108,8 +108,8 @@ export function parseViewerUrlParams(
 
   return {
     modelUrl: params.get("model"),
-    near: parseFiniteNumber(params.get("near"), 0.1, 0.01, 10),
-    far: parseFiniteNumber(params.get("far"), 100, 10, 1000),
+    near: parseFiniteNumber(params.get("near"), 1, 0.1, 100),
+    far: parseFiniteNumber(params.get("far"), 10000, 1000, 100000),
     calibration,
     modelTransform,
   };

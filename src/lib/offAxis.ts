@@ -19,7 +19,7 @@ export interface OffAxisFrustum {
 }
 
 export function computeOffAxisFrustum(input: ScreenWindowProjectionInput): OffAxisFrustum {
-  const distanceToScreen = Math.max(0.001, input.eyeZ - input.screenZ);
+  const distanceToScreen = Math.max(0.1, input.eyeZ - input.screenZ);
 
   return {
     left: (input.near * (input.screenLeft - input.eyeX)) / distanceToScreen,

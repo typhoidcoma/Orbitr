@@ -4,8 +4,8 @@ import {
   resetViewerState,
   saveViewerState,
 } from "./lib/calibrationStorage";
-import { AutoCalibrator, guessMonitorPreset } from "./lib/autoCalibrate";
-import { applyMonitorPreset, DEFAULT_MODEL_TRANSFORM } from "./lib/parallaxConfig";
+import { AutoCalibrator, guessScreenDiagonalCm, screenDimensionsFromDiagonal } from "./lib/autoCalibrate";
+import { DEFAULT_MODEL_TRANSFORM } from "./lib/parallaxConfig";
 import { parseViewerUrlParams } from "./lib/urlParams";
 import { loadViewerModel } from "./model/loadModel";
 import { FaceTracker, type TrackingDiagnostics } from "./tracking/faceTracker";
@@ -62,12 +62,17 @@ async function bootstrap(): Promise<void> {
 
   let persistedState = loadViewerState();
 
-  // Auto-detect monitor preset if not already calibrated
+  // Auto-detect screen size if not already calibrated
   if (!persistedState.calibration.calibrationComplete) {
-    const guessed = guessMonitorPreset();
+    const diagonal = guessScreenDiagonalCm();
+    const dims = screenDimensionsFromDiagonal(diagonal);
     persistedState = {
       ...persistedState,
-      calibration: applyMonitorPreset(persistedState.calibration, guessed),
+      calibration: {
+        ...persistedState.calibration,
+        screenWidth: dims.width,
+        screenHeight: dims.height,
+      },
     };
   }
 
@@ -205,16 +210,21 @@ async function bootstrap(): Promise<void> {
 
   // Fullscreen
   const syncFullscreenButton = (): void => {
-    ui.setFullscreenEnabled(getFullscreenElement() === ui.canvasHost);
+    ui.setFullscreenEnabled(getFullscreenElement() != null);
+    // The container is position:fixed;inset:0 so it always matches the viewport.
+    // After fullscreen change, the container resizes and ResizeObserver fires.
+    // But as a safety net, also trigger manual resizes with delays.
     requestAnimationFrame(() => viewer.resize());
+    setTimeout(() => viewer.resize(), 150);
+    setTimeout(() => viewer.resize(), 500);
   };
 
   ui.fullscreenButton.addEventListener("click", async () => {
     try {
-      if (getFullscreenElement() === ui.canvasHost) {
+      if (getFullscreenElement()) {
         await exitFullscreen();
       } else {
-        await enterFullscreen(ui.canvasHost);
+        await enterFullscreen(document.documentElement);
       }
     } catch (error) {
       ui.setStatus(
@@ -273,7 +283,7 @@ async function bootstrap(): Promise<void> {
     "wheel",
     (event) => {
       event.preventDefault();
-      const depthStep = 0.0008 * event.deltaY;
+      const depthStep = 0.08 * event.deltaY;
       applyModelTransform({
         ...modelTransform,
         positionZ: modelTransform.positionZ + depthStep,

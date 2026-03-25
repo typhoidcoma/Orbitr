@@ -66,11 +66,11 @@ describe("normalizeTrackingObservation", () => {
     expect(closer.debug.estimatedDistance).toBeLessThan(DEFAULT_PARALLAX_CALIBRATION.neutralDistance);
   });
 
-  it("keeps eye refinement bounded compared with the main head translation", () => {
+  it("keeps eye refinement small compared with the main head translation", () => {
     const calibration = {
       ...DEFAULT_PARALLAX_CALIBRATION,
-      eyeRefinementGain: 0.035,
-      gainX: 2.2,
+      eyeRefinementGain: 0.8,
+      gainX: 1,
     };
     const neutral = createNeutralPose(observation(), null);
 
@@ -80,8 +80,11 @@ describe("normalizeTrackingObservation", () => {
       calibration
     );
 
-    expect(pose.eyeX).toBeCloseTo(-0.145, 3);
-    expect(Math.abs(pose.eyeX)).toBeLessThan(0.2);
+    // headOffsetX: (0.5-0.55) * viewWidth(~78.5) * 1 * 1 ≈ -3.93
+    // gazeOffsetX: -1 * 0.8 = -0.8
+    // total ≈ -4.73, gaze is small relative to head
+    expect(pose.eyeX).toBeCloseTo(-4.73, 0);
+    expect(Math.abs(pose.eyeX)).toBeLessThan(10);
   });
 
   it("marks low-confidence observations invalid", () => {

@@ -21,12 +21,13 @@ export interface AutoCalibrateCallbacks {
 
 const FACE_DETECT_TIMEOUT_MS = 10_000;
 const NEUTRAL_CAPTURE_TIMEOUT_MS = 8_000;
-const FACE_WIDTH_METERS = 0.15;
+const FACE_WIDTH_CM = 15;
 const ASSUMED_HFOV_RAD = (60 * Math.PI) / 180;
 
+/** Estimate viewing distance in cm from normalized face width. */
 export function estimateViewingDistance(faceWidth: number): number {
-  if (faceWidth < 0.01) return 0.68;
-  return Math.max(0.25, Math.min(1.8, FACE_WIDTH_METERS / (2 * faceWidth * Math.tan(ASSUMED_HFOV_RAD / 2))));
+  if (faceWidth < 0.01) return 68;
+  return Math.max(25, Math.min(180, FACE_WIDTH_CM / (2 * faceWidth * Math.tan(ASSUMED_HFOV_RAD / 2))));
 }
 
 export class AutoCalibrator {
@@ -114,7 +115,7 @@ export class AutoCalibrator {
       const distance = estimateViewingDistance(faceWidth);
       this.calibration = { ...this.calibration, neutralDistance: distance };
       this.callbacks.onCalibrationUpdate(this.calibration);
-      this.setPhase("detecting-distance", `Distance: ~${distance.toFixed(2)}m`);
+      this.setPhase("detecting-distance", `Distance: ~${Math.round(distance)}cm`);
     }
 
     this.setPhase("capturing-neutral", "Hold still...");
@@ -139,20 +140,28 @@ export class AutoCalibrator {
   }
 }
 
-export function guessMonitorPreset(): "24_desktop" | "27_desktop" | "14_laptop" {
+/** Estimate screen diagonal in cm from resolution and pixel ratio heuristics. */
+export function guessScreenDiagonalCm(): number {
   const w = window.screen.width;
-  const h = window.screen.height;
   const dpr = window.devicePixelRatio;
+  const physicalW = w * dpr;
 
-  if (w >= 2500 || h >= 1400) return "27_desktop";
-  if (dpr > 1.5 && w < 2000) return "14_laptop";
-  return "24_desktop";
+  // High-DPI small screens (laptops, tablets)
+  if (dpr > 1.5 && w < 2000) return 35.6;  // ~14"
+  if (dpr > 1.5 && w < 2600) return 40.6;  // ~16"
+
+  // Desktop heuristics based on resolution
+  if (physicalW >= 3840) return 68.6;       // ~27" (4K)
+  if (physicalW >= 2560) return 68.6;       // ~27"
+  if (physicalW >= 1920) return 61;         // ~24"
+
+  return 61; // safe default (~24")
 }
 
-export function screenDimensionsFromDiagonal(diagonalInches: number): { width: number; height: number } {
+/** Convert screen diagonal (cm) to physical width/height in cm. */
+export function screenDimensionsFromDiagonal(diagonalCm: number): { width: number; height: number } {
   const aspect = window.screen.width / window.screen.height;
-  const diagMeters = diagonalInches * 0.0254;
-  const height = diagMeters / Math.sqrt(1 + aspect * aspect);
+  const height = diagonalCm / Math.sqrt(1 + aspect * aspect);
   const width = height * aspect;
   return { width, height };
 }

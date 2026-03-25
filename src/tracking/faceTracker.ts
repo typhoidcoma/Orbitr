@@ -474,10 +474,9 @@ function stabilizeFrame(
   next: TrackingFrame,
   calibration: ParallaxCalibration
 ): TrackingFrame {
-  const confidenceAlpha = 0.35 + next.confidence * 0.5;
-  const headAlpha = clamp01(calibration.headSmoothing + confidenceAlpha * 0.15);
-  const depthAlpha = clamp01(calibration.depthSmoothing + confidenceAlpha * 0.15);
-  const gazeAlpha = clamp01(calibration.gazeSmoothing + confidenceAlpha * 0.1);
+  const headAlpha = clamp01(calibration.headSmoothing);
+  const depthAlpha = clamp01(calibration.depthSmoothing);
+  const gazeAlpha = clamp01(calibration.gazeSmoothing);
 
   const clampedEyeX = clampDelta(previous.eyeX, next.eyeX, calibration.maxEyeDeltaX);
   const clampedEyeY = clampDelta(previous.eyeY, next.eyeY, calibration.maxEyeDeltaY);

@@ -1,8 +1,6 @@
 import {
   DEFAULT_MODEL_TRANSFORM,
-  applyMonitorPreset,
   type ModelTransform,
-  type MonitorPreset,
   type ParallaxCalibration,
 } from "../lib/parallaxConfig";
 import { screenDimensionsFromDiagonal } from "../lib/autoCalibrate";
@@ -81,14 +79,9 @@ export function createAppUi(
 
       <section class="drawer-section">
         <h3>Screen Size</h3>
-        <div class="preset-group">
-          <button data-preset="14_laptop" class="preset-button">14" Laptop</button>
-          <button data-preset="24_desktop" class="preset-button">24" Desktop</button>
-          <button data-preset="27_desktop" class="preset-button">27" Desktop</button>
-        </div>
-        <div class="custom-diagonal">
-          <input id="screen-diagonal" type="number" placeholder="e.g. 32" min="10" max="65" step="0.5" />
-          <span>inches (custom)</span>
+        <div class="screen-diagonal-field">
+          <input id="screen-diagonal" type="number" min="25" max="165" step="1" />
+          <span>cm diagonal</span>
         </div>
       </section>
 
@@ -101,13 +94,34 @@ export function createAppUi(
           </label>
           <input id="movement-scale" type="range" min="0.5" max="2" step="0.05" value="1" />
         </div>
+        <div class="range-field">
+          <label>
+            <span>Head Smoothing</span>
+            <span id="head-smoothing-value">0.85</span>
+          </label>
+          <input id="head-smoothing" type="range" min="0.1" max="1" step="0.05" value="0.85" />
+        </div>
+        <div class="range-field">
+          <label>
+            <span>Depth Smoothing</span>
+            <span id="depth-smoothing-value">0.70</span>
+          </label>
+          <input id="depth-smoothing" type="range" min="0.1" max="1" step="0.05" value="0.7" />
+        </div>
+        <div class="range-field">
+          <label>
+            <span>Max Movement (cm/frame)</span>
+            <span id="max-movement-value">15</span>
+          </label>
+          <input id="max-movement" type="range" min="1" max="50" step="1" value="15" />
+        </div>
       </section>
 
       <section class="drawer-section">
         <h3>Scene</h3>
         <label class="toggle">
           <input id="show-presentation-room" type="checkbox" />
-          <span>Presentation room</span>
+          <span>Checkerboard room</span>
         </label>
         <label class="toggle">
           <input id="show-wireframe-room" type="checkbox" />
@@ -115,16 +129,16 @@ export function createAppUi(
         </label>
         <label class="toggle">
           <input id="show-screen-frame" type="checkbox" />
-          <span>Screen frame</span>
+          <span>Screen outline</span>
         </label>
       </section>
 
       <details class="details-panel">
         <summary>Model Placement</summary>
         <div class="controls">
-          ${renderModelField("positionX", "Model X", "-5", "5", "0.01")}
-          ${renderModelField("positionY", "Model Y", "-5", "5", "0.01")}
-          ${renderModelField("positionZ", "Model Z", "-5", "5", "0.01")}
+          ${renderModelField("positionX", "Model X (cm)", "-500", "500", "0.5")}
+          ${renderModelField("positionY", "Model Y (cm)", "-500", "500", "0.5")}
+          ${renderModelField("positionZ", "Model Z (cm)", "-500", "500", "0.5")}
           ${renderModelField("rotationX", "Rotate X", "-180", "180", "1")}
           ${renderModelField("rotationY", "Rotate Y", "-180", "180", "1")}
           ${renderModelField("rotationZ", "Rotate Z", "-180", "180", "1")}
@@ -168,6 +182,12 @@ export function createAppUi(
   const resetModelButton = root.querySelector<HTMLButtonElement>("#reset-model-button")!;
   const movementScaleInput = root.querySelector<HTMLInputElement>("#movement-scale")!;
   const movementScaleValue = root.querySelector<HTMLSpanElement>("#movement-scale-value")!;
+  const headSmoothingInput = root.querySelector<HTMLInputElement>("#head-smoothing")!;
+  const headSmoothingValue = root.querySelector<HTMLSpanElement>("#head-smoothing-value")!;
+  const depthSmoothingInput = root.querySelector<HTMLInputElement>("#depth-smoothing")!;
+  const depthSmoothingValue = root.querySelector<HTMLSpanElement>("#depth-smoothing-value")!;
+  const maxMovementInput = root.querySelector<HTMLInputElement>("#max-movement")!;
+  const maxMovementValue = root.querySelector<HTMLSpanElement>("#max-movement-value")!;
   const screenDiagonalInput = root.querySelector<HTMLInputElement>("#screen-diagonal")!;
   const presentationRoomToggle = root.querySelector<HTMLInputElement>("#show-presentation-room")!;
   const wireframeRoomToggle = root.querySelector<HTMLInputElement>("#show-wireframe-room")!;
@@ -175,8 +195,6 @@ export function createAppUi(
   const debugToggle = root.querySelector<HTMLInputElement>("#show-debug")!;
   const facePreviewToggle = root.querySelector<HTMLInputElement>("#show-face-preview")!;
   const debugReadout = root.querySelector<HTMLPreElement>("#debug-readout")!;
-  const presetButtons = root.querySelectorAll<HTMLButtonElement>("[data-preset]");
-
   const modelInputs = Object.fromEntries(
     MODEL_FIELDS.map((field) => [
       field,
@@ -198,23 +216,28 @@ export function createAppUi(
     backdrop.classList.remove("open");
   };
 
-  const syncPresetButtons = (): void => {
-    presetButtons.forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.preset === calibration.monitorPreset);
-    });
+  /** Compute diagonal cm from physical screen width/height (cm). */
+  const diagonalFromDimensions = (w: number, h: number): number => {
+    return Math.sqrt(w * w + h * h);
   };
 
   const setCalibrationFields = (next: ParallaxCalibration): void => {
     calibration = { ...next };
+    screenDiagonalInput.value = diagonalFromDimensions(next.screenWidth, next.screenHeight).toFixed(1);
     movementScaleInput.value = `${next.movementScale}`;
     movementScaleValue.textContent = next.movementScale.toFixed(2);
+    headSmoothingInput.value = `${next.headSmoothing}`;
+    headSmoothingValue.textContent = next.headSmoothing.toFixed(2);
+    depthSmoothingInput.value = `${next.depthSmoothing}`;
+    depthSmoothingValue.textContent = next.depthSmoothing.toFixed(2);
+    maxMovementInput.value = `${next.maxEyeDeltaX}`;
+    maxMovementValue.textContent = `${Math.round(next.maxEyeDeltaX)}`;
     presentationRoomToggle.checked = next.showPresentationRoom;
     wireframeRoomToggle.checked = next.showWireframeRoom;
     screenFrameToggle.checked = next.showScreenFrame;
     debugToggle.checked = next.showDebug;
     facePreviewToggle.checked = next.showFacePreview;
     debugReadout.hidden = !next.showDebug;
-    syncPresetButtons();
   };
 
   const setModelTransformFields = (next: ModelTransform): void => {
@@ -291,32 +314,42 @@ export function createAppUi(
       closeDrawer.addEventListener("click", closeSettings);
       backdrop.addEventListener("click", closeSettings);
 
-      presetButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const preset = btn.dataset.preset as MonitorPreset;
-          calibration = applyMonitorPreset(calibration, preset);
-          handlers.onCalibrationChange(calibration);
-          setCalibrationFields(calibration);
-        });
-      });
-
       screenDiagonalInput.addEventListener("change", () => {
-        const inches = Number(screenDiagonalInput.value);
-        if (!Number.isFinite(inches) || inches < 10 || inches > 65) return;
-        const dims = screenDimensionsFromDiagonal(inches);
+        const diagCm = Number(screenDiagonalInput.value);
+        if (!Number.isFinite(diagCm) || diagCm < 25 || diagCm > 165) return;
+        const dims = screenDimensionsFromDiagonal(diagCm);
         calibration = {
           ...calibration,
-          monitorPreset: "custom" as MonitorPreset,
           screenWidth: dims.width,
           screenHeight: dims.height,
         };
         handlers.onCalibrationChange(calibration);
-        setCalibrationFields(calibration);
       });
 
       movementScaleInput.addEventListener("input", () => {
         movementScaleValue.textContent = Number(movementScaleInput.value).toFixed(2);
         emitCalibrationChange();
+      });
+
+      headSmoothingInput.addEventListener("input", () => {
+        const v = Number(headSmoothingInput.value);
+        headSmoothingValue.textContent = v.toFixed(2);
+        calibration = { ...calibration, headSmoothing: v, gazeSmoothing: v, smoothing: v };
+        handlers.onCalibrationChange(calibration);
+      });
+
+      depthSmoothingInput.addEventListener("input", () => {
+        const v = Number(depthSmoothingInput.value);
+        depthSmoothingValue.textContent = v.toFixed(2);
+        calibration = { ...calibration, depthSmoothing: v };
+        handlers.onCalibrationChange(calibration);
+      });
+
+      maxMovementInput.addEventListener("input", () => {
+        const v = Number(maxMovementInput.value);
+        maxMovementValue.textContent = `${Math.round(v)}`;
+        calibration = { ...calibration, maxEyeDeltaX: v, maxEyeDeltaY: v, maxEyeDeltaZ: v };
+        handlers.onCalibrationChange(calibration);
       });
 
       presentationRoomToggle.addEventListener("change", emitCalibrationChange);

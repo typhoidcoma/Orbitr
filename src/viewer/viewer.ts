@@ -22,7 +22,7 @@ import {
 } from "three";
 import { computeOffAxisFrustum } from "../lib/offAxis";
 import type { ModelTransform, ParallaxCalibration } from "../lib/parallaxConfig";
-import { smoothValue } from "../lib/smoothing";
+
 import type { ViewerPose } from "../tracking/normalizeTracking";
 
 export interface ViewerConfig {
@@ -72,7 +72,6 @@ export class Viewer {
   private viewportWidth = 1;
   private viewportHeight = 1;
   private targetPose: ViewerPose;
-  private smoothedPose: ViewerPose;
   private trackingEnabled = false;
   private effectiveScreenRect: EffectiveScreenRect;
 
@@ -82,7 +81,6 @@ export class Viewer {
     this.calibration = config.calibration;
     this.modelTransform = config.modelTransform;
     this.targetPose = createNeutralViewerPose(this.calibration);
-    this.smoothedPose = createNeutralViewerPose(this.calibration);
     this.effectiveScreenRect = createFallbackScreenRect(this.calibration);
 
     this.camera = new PerspectiveCamera(50, 1, config.near, config.far);
@@ -90,11 +88,11 @@ export class Viewer {
 
     this.renderer = new WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
-    this.renderer.setClearColor(new Color("#07161f"));
+    this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    this.renderer.setClearColor(new Color("#000000"));
     container.append(this.renderer.domElement);
 
-    this.scene.background = new Color("#0b1e2b");
+    this.scene.background = new Color("#000000");
     this.scene.add(this.sceneContentGroup);
     this.scene.add(this.screenGroup);
     this.scene.add(this.presentationRoomGroup);
@@ -102,7 +100,7 @@ export class Viewer {
     this.sceneContentGroup.add(this.modelAnchorGroup);
 
     this.screenPlane = new Mesh(
-      new BoxGeometry(1, 1, 0.002),
+      new BoxGeometry(1, 1, 0.2),
       new MeshBasicMaterial({
         color: "#ff5656",
         opacity: 0.035,
@@ -110,14 +108,14 @@ export class Viewer {
       })
     );
     this.screenFrame = new LineSegments(
-      new EdgesGeometry(new BoxGeometry(1, 1, 0.002)),
+      new EdgesGeometry(new BoxGeometry(1, 1, 0.2)),
       new LineBasicMaterial({ color: "#ff4d4d" })
     );
     this.presentationRoomShell = new Mesh(
       new BoxGeometry(1, 1, 1),
       new MeshStandardMaterial({
         map: createCheckerTexture(),
-        color: "#d9edf7",
+        color: "#ffffff",
         roughness: 0.92,
         metalness: 0.02,
         side: BackSide,
@@ -149,7 +147,7 @@ export class Viewer {
   private addDefaultHelpers(): void {
     const ambient = new AmbientLight("#d5e9ff", 0.8);
     const key = new DirectionalLight("#ffffff", 1.2);
-    key.position.set(1.2, 1.6, 2.8);
+    key.position.set(120, 160, 280);
 
     this.scene.add(ambient, key);
   }
@@ -186,9 +184,9 @@ export class Viewer {
     this.viewportWidth = Math.max(1, this.container.clientWidth);
     this.viewportHeight = Math.max(1, this.container.clientHeight);
     this.camera.aspect = this.viewportWidth / this.viewportHeight;
+    this.renderer.setSize(this.viewportWidth, this.viewportHeight);
     this.layoutScene();
     this.applyOffAxisProjection();
-    this.renderer.setSize(this.viewportWidth, this.viewportHeight, false);
   };
 
   public resize(): void {
@@ -224,17 +222,8 @@ export class Viewer {
   }
 
   public frame(): void {
-    const target = this.trackingEnabled ? this.targetPose : createNeutralViewerPose(this.calibration);
-    const alpha = this.calibration.smoothing;
-
-    this.smoothedPose = {
-      ...target,
-      eyeX: smoothValue(this.smoothedPose.eyeX, target.eyeX, alpha),
-      eyeY: smoothValue(this.smoothedPose.eyeY, target.eyeY, alpha),
-      eyeZ: smoothValue(this.smoothedPose.eyeZ, target.eyeZ, alpha),
-    };
-
-    this.camera.position.set(this.smoothedPose.eyeX, this.smoothedPose.eyeY, this.smoothedPose.eyeZ);
+    const pose = this.trackingEnabled ? this.targetPose : createNeutralViewerPose(this.calibration);
+    this.camera.position.set(pose.eyeX, pose.eyeY, pose.eyeZ);
     this.camera.rotation.set(0, 0, 0);
     this.syncEffectiveScreenRect();
     this.applyOffAxisProjection();
@@ -262,7 +251,7 @@ export class Viewer {
 
   private layoutScene(): void {
     const screen = this.syncEffectiveScreenRect();
-    const roomDepth = clamp(screen.width * 0.66, 0.22, 0.42);
+    const roomDepth = clamp(screen.width * 0.66, 22, 42);
     const roomHeight = screen.height;
     const roomWidth = screen.width;
     const modelBaseAnchor = getModelBaseAnchor(screen);
@@ -308,11 +297,11 @@ export class Viewer {
   private syncEffectiveScreenRect(): EffectiveScreenRect {
     const next = this.computeEffectiveScreenRect();
     const changed =
-      Math.abs(next.width - this.effectiveScreenRect.width) > 0.0001 ||
-      Math.abs(next.height - this.effectiveScreenRect.height) > 0.0001 ||
-      Math.abs(next.centerX - this.effectiveScreenRect.centerX) > 0.0001 ||
-      Math.abs(next.centerY - this.effectiveScreenRect.centerY) > 0.0001 ||
-      Math.abs(next.z - this.effectiveScreenRect.z) > 0.0001;
+      Math.abs(next.width - this.effectiveScreenRect.width) > 0.01 ||
+      Math.abs(next.height - this.effectiveScreenRect.height) > 0.01 ||
+      Math.abs(next.centerX - this.effectiveScreenRect.centerX) > 0.01 ||
+      Math.abs(next.centerY - this.effectiveScreenRect.centerY) > 0.01 ||
+      Math.abs(next.z - this.effectiveScreenRect.z) > 0.01;
 
     this.effectiveScreenRect = next;
     if (changed) {
@@ -323,19 +312,10 @@ export class Viewer {
   }
 
   private computeEffectiveScreenRect(): EffectiveScreenRect {
-    const rect = this.container.getBoundingClientRect();
-    const viewportWidth = Math.max(1, window.innerWidth);
-    const viewportHeight = Math.max(1, window.innerHeight);
-    const widthRatio = clamp01(rect.width / viewportWidth);
-    const heightRatio = clamp01(rect.height / viewportHeight);
-    const width = Math.max(0.01, this.calibration.screenWidth * widthRatio);
-    const height = Math.max(0.01, this.calibration.screenHeight * heightRatio);
-    const centerRatioX = rect.left / viewportWidth + widthRatio * 0.5;
-    const centerRatioY = rect.top / viewportHeight + heightRatio * 0.5;
-    const centerX =
-      this.calibration.screenOffsetX + (centerRatioX - 0.5) * this.calibration.screenWidth;
-    const centerY =
-      this.calibration.screenOffsetY + (0.5 - centerRatioY) * this.calibration.screenHeight;
+    const width = Math.max(1, this.calibration.screenWidth);
+    const height = Math.max(1, this.calibration.screenHeight);
+    const centerX = this.calibration.screenOffsetX;
+    const centerY = this.calibration.screenOffsetY;
     const z = this.calibration.screenOffsetZ;
 
     return {
@@ -353,10 +333,10 @@ export class Viewer {
 }
 
 function createNeutralViewerPose(calibration?: ParallaxCalibration): ViewerPose {
-  const neutralDistance = calibration?.neutralDistance ?? 0.68;
+  const neutralDistance = calibration?.neutralDistance ?? 68;
   const cameraOffsetX = calibration?.cameraOffsetX ?? 0;
-  const cameraOffsetY = calibration?.cameraOffsetY ?? 0.08;
-  const cameraOffsetZ = calibration?.cameraOffsetZ ?? 0.035;
+  const cameraOffsetY = calibration?.cameraOffsetY ?? 8;
+  const cameraOffsetZ = calibration?.cameraOffsetZ ?? 3.5;
 
   return {
     eyeX: cameraOffsetX,
@@ -400,7 +380,7 @@ function createCheckerTexture(): CanvasTexture {
   for (let y = 0; y < cells; y += 1) {
     for (let x = 0; x < cells; x += 1) {
       const light = (x + y) % 2 === 0;
-      ctx.fillStyle = light ? "#f3f6f8" : "#293640";
+      ctx.fillStyle = light ? "#1c2e3e" : "#0a1018";
       ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
     }
   }
@@ -435,10 +415,6 @@ function createFallbackScreenRect(calibration: ParallaxCalibration): EffectiveSc
     top: centerY + height * 0.5,
     z,
   };
-}
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
 }
 
 function clamp(value: number, min: number, max: number): number {

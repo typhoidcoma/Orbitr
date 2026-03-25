@@ -4,15 +4,15 @@ import { computeOffAxisFrustum } from "./offAxis";
 describe("computeOffAxisFrustum", () => {
   it("returns symmetric frustum when the viewer is centered on the screen", () => {
     const frustum = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
+      near: 1,
+      far: 10000,
       eyeX: 0,
       eyeY: 0,
-      eyeZ: 1,
-      screenLeft: -0.6,
-      screenRight: 0.6,
-      screenBottom: -0.3,
-      screenTop: 0.3,
+      eyeZ: 68,
+      screenLeft: -26.5,
+      screenRight: 26.5,
+      screenBottom: -15,
+      screenTop: 15,
       screenZ: 0,
     });
 
@@ -22,28 +22,28 @@ describe("computeOffAxisFrustum", () => {
 
   it("shifts the frustum left when the viewer moves right", () => {
     const baseline = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
+      near: 1,
+      far: 10000,
       eyeX: 0,
       eyeY: 0,
-      eyeZ: 1,
-      screenLeft: -0.6,
-      screenRight: 0.6,
-      screenBottom: -0.3,
-      screenTop: 0.3,
+      eyeZ: 68,
+      screenLeft: -26.5,
+      screenRight: 26.5,
+      screenBottom: -15,
+      screenTop: 15,
       screenZ: 0,
     });
 
     const shifted = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
-      eyeX: 0.2,
+      near: 1,
+      far: 10000,
+      eyeX: 10,
       eyeY: 0,
-      eyeZ: 1,
-      screenLeft: -0.6,
-      screenRight: 0.6,
-      screenBottom: -0.3,
-      screenTop: 0.3,
+      eyeZ: 68,
+      screenLeft: -26.5,
+      screenRight: 26.5,
+      screenBottom: -15,
+      screenTop: 15,
       screenZ: 0,
     });
 
@@ -53,28 +53,28 @@ describe("computeOffAxisFrustum", () => {
 
   it("increases perspective strength as the viewer gets closer", () => {
     const farther = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
-      eyeX: 0.15,
+      near: 1,
+      far: 10000,
+      eyeX: 10,
       eyeY: 0,
-      eyeZ: 1.4,
-      screenLeft: -0.6,
-      screenRight: 0.6,
-      screenBottom: -0.3,
-      screenTop: 0.3,
+      eyeZ: 100,
+      screenLeft: -26.5,
+      screenRight: 26.5,
+      screenBottom: -15,
+      screenTop: 15,
       screenZ: 0,
     });
 
     const closer = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
-      eyeX: 0.15,
+      near: 1,
+      far: 10000,
+      eyeX: 10,
       eyeY: 0,
-      eyeZ: 0.8,
-      screenLeft: -0.6,
-      screenRight: 0.6,
-      screenBottom: -0.3,
-      screenTop: 0.3,
+      eyeZ: 50,
+      screenLeft: -26.5,
+      screenRight: 26.5,
+      screenBottom: -15,
+      screenTop: 15,
       screenZ: 0,
     });
 
@@ -84,28 +84,28 @@ describe("computeOffAxisFrustum", () => {
 
   it("treats a narrower centered sub-window as a smaller physical opening", () => {
     const full = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
+      near: 1,
+      far: 10000,
       eyeX: 0,
       eyeY: 0,
-      eyeZ: 1,
-      screenLeft: -0.6,
-      screenRight: 0.6,
-      screenBottom: -0.3,
-      screenTop: 0.3,
+      eyeZ: 68,
+      screenLeft: -26.5,
+      screenRight: 26.5,
+      screenBottom: -15,
+      screenTop: 15,
       screenZ: 0,
     });
 
     const subWindow = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
+      near: 1,
+      far: 10000,
       eyeX: 0,
       eyeY: 0,
-      eyeZ: 1,
-      screenLeft: -0.3,
-      screenRight: 0.3,
-      screenBottom: -0.15,
-      screenTop: 0.15,
+      eyeZ: 68,
+      screenLeft: -13,
+      screenRight: 13,
+      screenBottom: -7.5,
+      screenTop: 7.5,
       screenZ: 0,
     });
 
@@ -116,28 +116,28 @@ describe("computeOffAxisFrustum", () => {
 
   it("treats an off-center sub-window as a shifted physical opening", () => {
     const centered = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
+      near: 1,
+      far: 10000,
       eyeX: 0,
       eyeY: 0,
-      eyeZ: 1,
-      screenLeft: -0.3,
-      screenRight: 0.3,
-      screenBottom: -0.15,
-      screenTop: 0.15,
+      eyeZ: 68,
+      screenLeft: -13,
+      screenRight: 13,
+      screenBottom: -7.5,
+      screenTop: 7.5,
       screenZ: 0,
     });
 
     const shifted = computeOffAxisFrustum({
-      near: 0.1,
-      far: 100,
+      near: 1,
+      far: 10000,
       eyeX: 0,
       eyeY: 0,
-      eyeZ: 1,
-      screenLeft: 0.1,
-      screenRight: 0.7,
-      screenBottom: -0.15,
-      screenTop: 0.15,
+      eyeZ: 68,
+      screenLeft: 5,
+      screenRight: 31,
+      screenBottom: -7.5,
+      screenTop: 7.5,
       screenZ: 0,
     });
 
