@@ -19,11 +19,12 @@ const VISION_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.
 const FACE_TASK_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-interface TrackerCallbacks {
+export interface TrackerCallbacks {
   onFrame: (frame: TrackingFrame) => void;
   onError: (message: string) => void;
   onPreviewStream?: (stream: MediaStream | null) => void;
   onDiagnostics?: (diagnostics: TrackingDiagnostics) => void;
+  onLandmarks?: (landmarks: Array<{ x: number; y: number; z: number }>) => void;
 }
 
 export type TrackingFrame = ViewerPose;
@@ -41,6 +42,8 @@ export class FaceTracker {
   private stream: MediaStream | null = null;
   private video: HTMLVideoElement | null = null;
   private running = false;
+  private initializing = false;
+  private detectionTimerId = 0;
   private rafId = 0;
   private calibration: ParallaxCalibration;
   private neutralPose: TrackingNeutralPose | null = null;
@@ -55,10 +58,11 @@ export class FaceTracker {
   }
 
   public async start(): Promise<void> {
-    if (this.running) {
+    if (this.running || this.initializing) {
       return;
     }
 
+    this.initializing = true;
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -76,14 +80,18 @@ export class FaceTracker {
       await this.video.play();
       this.callbacks.onPreviewStream?.(this.stream);
 
+      await this.checkCdnHealth();
       this.landmarker = await this.createLandmarker();
       this.running = true;
-      this.tick();
+      this.scheduleDetection();
+      this.renderLoop();
     } catch (error) {
       this.stop();
       const details = error instanceof Error ? error.message : "Unknown webcam/tracker error";
       this.callbacks.onError(`Tracking unavailable: ${details}`);
       throw error;
+    } finally {
+      this.initializing = false;
     }
   }
 
@@ -106,6 +114,7 @@ export class FaceTracker {
   public stop(): void {
     this.running = false;
     cancelAnimationFrame(this.rafId);
+    clearTimeout(this.detectionTimerId);
 
     if (this.landmarker) {
       this.landmarker.close();
@@ -139,6 +148,11 @@ export class FaceTracker {
     return this.running;
   }
 
+  /** Returns the latest raw face width (in normalized 0–1 camera coords), or null if not tracking. */
+  public getLatestFaceWidth(): number | null {
+    return this.latestObservation?.faceWidth ?? null;
+  }
+
   private async createLandmarker(): Promise<FaceLandmarker> {
     const vision = await FilesetResolver.forVisionTasks(VISION_WASM_URL);
     const options = {
@@ -168,13 +182,28 @@ export class FaceTracker {
     }
   }
 
-  private tick = (): void => {
+  /** Render loop: emits the latest smoothed pose every frame without blocking on detection. */
+  private renderLoop = (): void => {
+    if (!this.running) {
+      return;
+    }
+    this.callbacks.onFrame(this.smoothed);
+    this.rafId = requestAnimationFrame(this.renderLoop);
+  };
+
+  /** Detection loop: runs face detection at its own pace via setTimeout so it never blocks rendering. */
+  private scheduleDetection = (): void => {
     if (!this.running || !this.landmarker || !this.video) {
       return;
     }
 
     const result = this.landmarker.detectForVideo(this.video, performance.now());
+    const rawLandmarks = result.faceLandmarks?.[0];
     const observation = this.extractFrame(result);
+
+    if (rawLandmarks) {
+      this.callbacks.onLandmarks?.(rawLandmarks);
+    }
 
     if (!observation) {
       this.stableFrameCount = 0;
@@ -184,8 +213,7 @@ export class FaceTracker {
         stableFrameCount: 0,
         confidence: 0,
       });
-      this.callbacks.onFrame(this.smoothed);
-      this.rafId = requestAnimationFrame(this.tick);
+      this.detectionTimerId = window.setTimeout(this.scheduleDetection, 0);
       return;
     }
 
@@ -225,10 +253,24 @@ export class FaceTracker {
       });
     }
 
-    this.callbacks.onFrame(this.smoothed);
-
-    this.rafId = requestAnimationFrame(this.tick);
+    this.detectionTimerId = window.setTimeout(this.scheduleDetection, 0);
   };
+
+  private async checkCdnHealth(): Promise<void> {
+    try {
+      const response = await fetch(VISION_WASM_URL + "/vision_wasm_internal.js", {
+        method: "HEAD",
+        cache: "no-cache",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch {
+      throw new Error(
+        "MediaPipe CDN unreachable \u2014 check your internet connection and try again."
+      );
+    }
+  }
 
   private extractFrame(result: FaceLandmarkerResult): RawTrackingObservation | null {
     const matrixData = result.facialTransformationMatrixes?.[0]?.data;

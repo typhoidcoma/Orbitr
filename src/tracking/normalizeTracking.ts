@@ -71,11 +71,13 @@ export function normalizeTrackingObservation(
   calibration: ParallaxCalibration
 ): ViewerPose {
   const estimatedDistance = computeEstimatedDistance(observation.faceScale, neutral, calibration);
-  const headOffsetX = (neutral.headCenterX - observation.headCenterX) * calibration.gainX;
-  const headOffsetY = (neutral.headCenterY - observation.headCenterY) * calibration.gainY;
+  const scale = calibration.movementScale;
+  const headOffsetX = (neutral.headCenterX - observation.headCenterX) * calibration.gainX * scale;
+  const headOffsetY = (neutral.headCenterY - observation.headCenterY) * calibration.gainY * scale;
   const gazeOffsetX = -observation.gazeX * calibration.eyeRefinementGain;
   const gazeOffsetY = -observation.gazeY * calibration.eyeRefinementGain;
 
+  const depthDeviation = (estimatedDistance - calibration.neutralDistance) * scale;
   const eyeX = applyDeadzone(
     calibration.screenOffsetX + calibration.cameraOffsetX + headOffsetX + gazeOffsetX,
     0.0005
@@ -86,7 +88,7 @@ export function normalizeTrackingObservation(
   );
   const eyeZ = Math.max(
     calibration.screenOffsetZ + 0.05,
-    estimatedDistance + calibration.cameraOffsetZ
+    calibration.neutralDistance + depthDeviation + calibration.cameraOffsetZ
   );
 
   return {

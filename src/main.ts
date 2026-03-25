@@ -10,6 +10,7 @@ import { loadViewerModel } from "./model/loadModel";
 import { FaceTracker, type TrackingDiagnostics } from "./tracking/faceTracker";
 import type { ViewerPose } from "./tracking/normalizeTracking";
 import { createAppUi } from "./ui/appUi";
+import { FaceMeshOverlay } from "./ui/faceMeshOverlay";
 import { Viewer } from "./viewer/viewer";
 
 type FullscreenDocument = Document & {
@@ -81,6 +82,9 @@ async function bootstrap(): Promise<void> {
   ui.setModelTransform(modelTransform);
   viewer.setModel(loadedModel.model);
   let latestDebugPose: ViewerPose | null = null;
+  const faceMeshOverlay = new FaceMeshOverlay(
+    app.querySelector<HTMLElement>("#face-preview-shell")!
+  );
 
   if (loadedModel.warning) {
     ui.setStatus(loadedModel.warning, "warning");
@@ -117,11 +121,24 @@ async function bootstrap(): Promise<void> {
       },
       onPreviewStream(stream) {
         ui.setPreviewStream(stream);
+        if (!stream) {
+          faceMeshOverlay.clear();
+        }
+      },
+      onLandmarks(landmarks) {
+        if (calibration.showFacePreview) {
+          faceMeshOverlay.draw(landmarks);
+        }
       },
       onDiagnostics(diagnostics: TrackingDiagnostics) {
         if (!tracker.isRunning()) {
           return;
         }
+
+        ui.updateNeutralProgress(
+          diagnostics.stableFrameCount,
+          calibration.neutralCaptureStableFrames
+        );
 
         if (diagnostics.mode === "tracking") {
           ui.setStatus(
@@ -152,6 +169,26 @@ async function bootstrap(): Promise<void> {
       tracker.updateCalibration(next);
       ui.setCalibration(next);
       persist();
+    },
+    onAutoDetectDistance() {
+      const faceWidth = tracker.getLatestFaceWidth();
+      if (!faceWidth || faceWidth < 0.01) {
+        ui.setStatus("Start tracking first so a face can be measured.", "warning");
+        return;
+      }
+      // Average adult face is ~0.15m wide; estimate distance from normalized face width.
+      // Assumes a typical webcam horizontal FOV of ~60 degrees.
+      const FACE_WIDTH_METERS = 0.15;
+      const ASSUMED_HFOV_RAD = (60 * Math.PI) / 180;
+      const estimatedDistance =
+        (FACE_WIDTH_METERS / (2 * faceWidth * Math.tan(ASSUMED_HFOV_RAD / 2)));
+      const clamped = Math.max(0.25, Math.min(1.8, estimatedDistance));
+      calibration = { ...calibration, neutralDistance: clamped };
+      viewer.setCalibration(calibration);
+      tracker.updateCalibration(calibration);
+      ui.setCalibration(calibration);
+      persist();
+      ui.setStatus(`Auto-detected viewing distance: ${clamped.toFixed(2)} m`);
     },
     onCaptureNeutral() {
       const captured = tracker.captureNeutralPose();

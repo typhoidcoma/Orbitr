@@ -38,6 +38,7 @@ export interface ParallaxCalibration {
   neutralCaptureStableFrames: number;
   neutralCaptureMaxOffset: number;
   neutralCaptureMaxScaleDelta: number;
+  movementScale: number;
   showDebug: boolean;
   showPresentationRoom: boolean;
   showWireframeRoom: boolean;
@@ -108,6 +109,7 @@ export const DEFAULT_PARALLAX_CALIBRATION: ParallaxCalibration = {
   neutralCaptureStableFrames: 12,
   neutralCaptureMaxOffset: 0.012,
   neutralCaptureMaxScaleDelta: 0.01,
+  movementScale: 1,
   showDebug: false,
   showPresentationRoom: true,
   showWireframeRoom: true,

@@ -244,7 +244,20 @@ export class Viewer {
   public dispose(): void {
     window.removeEventListener("resize", this.handleResize);
     this.resizeObserver?.disconnect();
+
+    this.scene.traverse((obj) => {
+      if (obj instanceof Mesh || obj instanceof LineSegments) {
+        obj.geometry.dispose();
+        const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (const mat of materials) {
+          if (mat.map) mat.map.dispose();
+          mat.dispose();
+        }
+      }
+    });
+
     this.renderer.dispose();
+    this.renderer.domElement.remove();
   }
 
   private layoutScene(): void {

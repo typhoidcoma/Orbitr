@@ -295,6 +295,7 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
+  transform: scaleX(-1);
 }
 
 .face-preview-marker {
@@ -309,6 +310,17 @@ body {
   left: 50%;
   top: 50%;
   pointer-events: none;
+}
+
+.neutral-progress {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #0a1a25;
+  border: 1px solid #33566d;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
 }
 
 .test-list {

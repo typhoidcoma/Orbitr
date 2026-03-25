@@ -1,9 +1,13 @@
 import {
   Box3,
+  BoxGeometry,
   Group,
+  Mesh,
+  MeshStandardMaterial,
   Object3D,
   Vector3,
 } from "three";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 const THREE_DUCK_GLB_URL = "/models/Duck.glb";
@@ -39,12 +43,24 @@ function normalizeRoot(root: Object3D, scale = 1.2): Group {
 }
 
 function buildProceduralFallback(): Group {
-  return new Group();
+  const group = new Group();
+  const geometry = new BoxGeometry(0.08, 0.08, 0.08);
+  const material = new MeshStandardMaterial({ color: 0x4ac2ff, roughness: 0.4, metalness: 0.3 });
+  const mesh = new Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+  group.scale.setScalar(1.2);
+  return group;
 }
 
 async function loadGlb(url: string, scale = 1.2): Promise<Group> {
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
   const loader = new GLTFLoader();
+  loader.setDRACOLoader(dracoLoader);
   const gltf = await loader.loadAsync(url);
+  dracoLoader.dispose();
   return normalizeRoot(gltf.scene, scale);
 }
 

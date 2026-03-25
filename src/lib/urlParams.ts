@@ -70,6 +70,7 @@ export function parseViewerUrlParams(
     cameraOffsetY: parseFiniteNumber(params.get("cameraOffsetY"), presetBase.cameraOffsetY, -0.5, 0.5),
     cameraOffsetZ: parseFiniteNumber(params.get("cameraOffsetZ"), presetBase.cameraOffsetZ, -0.5, 0.5),
     smoothing: parseFiniteNumber(params.get("smoothing"), presetBase.smoothing, 0, 1),
+    movementScale: parseFiniteNumber(params.get("movementScale"), presetBase.movementScale, 0.5, 2),
     showDebug: params.get("debug") === null ? presetBase.showDebug : params.get("debug") === "1",
     showPresentationRoom:
       params.get("presentationRoom") === null

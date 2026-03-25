@@ -24,6 +24,7 @@ type NumericTransformField = keyof ModelTransform;
 interface CalibrationHandlers {
   onCalibrationChange: (next: ParallaxCalibration) => void;
   onCaptureNeutral: () => void;
+  onAutoDetectDistance: () => void;
   onModelTransformChange: (next: ModelTransform) => void;
   onResetState: () => void;
 }
@@ -40,6 +41,7 @@ export interface AppUi {
   setModelTransform: (modelTransform: ModelTransform) => void;
   setPreviewStream: (stream: MediaStream | null) => void;
   updateDebugPose: (pose: ViewerPose | null, screenRect?: EffectiveScreenRect | null) => void;
+  updateNeutralProgress: (stableFrameCount: number, requiredFrames: number) => void;
 }
 
 const CALIBRATION_FIELDS: NumericCalibrationField[] = [
@@ -69,6 +71,7 @@ const CALIBRATION_FIELDS: NumericCalibrationField[] = [
   "neutralCaptureStableFrames",
   "neutralCaptureMaxOffset",
   "neutralCaptureMaxScaleDelta",
+  "movementScale",
 ];
 
 const MODEL_FIELDS: NumericTransformField[] = [
@@ -129,6 +132,7 @@ export function createAppUi(
           <section data-step-panel="screen" class="wizard-step">
             <h3>1. Screen</h3>
             <p>Pick a monitor preset or enter custom physical dimensions in meters.</p>
+            <button id="quick-start" class="secondary wide">Quick Start (use defaults)</button>
             <label class="field">
               <span>Monitor Preset</span>
               <select id="monitor-preset">
@@ -160,6 +164,7 @@ export function createAppUi(
             <h3>3. Distance</h3>
             <p>Set your typical eye-to-screen distance and smoothing. This becomes the neutral reference.</p>
             ${renderCalibrationField("neutralDistance", "Neutral Distance (m)", "0.25", "1.8", "0.001")}
+            <button id="auto-detect-distance" class="secondary wide">Auto-detect Distance</button>
             ${renderCalibrationField("smoothing", "Smoothing", "0", "1", "0.01")}
             <div class="two-up">
               ${renderCalibrationField("headSmoothing", "Head Smoothing", "0", "1", "0.01")}
@@ -181,6 +186,9 @@ export function createAppUi(
               <div id="face-preview-marker" class="face-preview-marker"></div>
             </div>
             <button id="capture-neutral" class="secondary wide">Capture Neutral Pose</button>
+            <div id="neutral-progress" class="neutral-progress" hidden>
+              <span id="neutral-progress-text">Stable: 0 / 12 frames</span>
+            </div>
             ${renderWizardActions("tracking")}
           </section>
 
@@ -193,6 +201,7 @@ export function createAppUi(
               <li>Lean in to strengthen perspective.</li>
               <li>Use fullscreen viewer mode for the cleanest effect.</li>
             </ul>
+            ${renderCalibrationField("movementScale", "Parallax Intensity", "0.5", "2", "0.05")}
             <div class="toggle-grid">
               <label class="toggle">
                 <input id="show-presentation-room" type="checkbox" />
@@ -272,10 +281,14 @@ export function createAppUi(
   const screenFrameToggle = root.querySelector<HTMLInputElement>("#show-screen-frame");
   const facePreviewToggle = root.querySelector<HTMLInputElement>("#show-face-preview");
   const debugReadout = root.querySelector<HTMLPreElement>("#debug-readout");
+  const quickStartButton = root.querySelector<HTMLButtonElement>("#quick-start");
+  const autoDetectDistanceButton = root.querySelector<HTMLButtonElement>("#auto-detect-distance");
   const monitorPreset = root.querySelector<HTMLSelectElement>("#monitor-preset");
   const previewShell = root.querySelector<HTMLDivElement>("#face-preview-shell");
   const previewVideo = root.querySelector<HTMLVideoElement>("#face-preview");
   const previewMarker = root.querySelector<HTMLDivElement>("#face-preview-marker");
+  const neutralProgress = root.querySelector<HTMLDivElement>("#neutral-progress");
+  const neutralProgressText = root.querySelector<HTMLSpanElement>("#neutral-progress-text");
 
   if (
     !canvasHost ||
@@ -296,7 +309,11 @@ export function createAppUi(
     !monitorPreset ||
     !previewShell ||
     !previewVideo ||
-    !previewMarker
+    !previewMarker ||
+    !neutralProgress ||
+    !neutralProgressText ||
+    !quickStartButton ||
+    !autoDetectDistanceButton
   ) {
     throw new Error("UI mount failed: required elements not found.");
   }
@@ -458,6 +475,10 @@ export function createAppUi(
       facePreviewToggle.addEventListener("change", emitCalibrationChange);
 
       captureNeutralButton.addEventListener("click", handlers.onCaptureNeutral);
+      autoDetectDistanceButton.addEventListener("click", handlers.onAutoDetectDistance);
+      quickStartButton.addEventListener("click", () => {
+        updateWizardStep("tracking");
+      });
       resetButton.addEventListener("click", handlers.onResetState);
       recalibrateButton.addEventListener("click", () => {
         calibration = { ...calibration, calibrationComplete: false };
@@ -507,9 +528,17 @@ export function createAppUi(
       previewVideo.srcObject = stream;
       previewShell.hidden = !calibration.showFacePreview || stream === null;
     },
+    updateNeutralProgress(stableFrameCount, requiredFrames) {
+      if (requiredFrames <= 0) {
+        neutralProgress.hidden = true;
+        return;
+      }
+      neutralProgress.hidden = false;
+      neutralProgressText.textContent = `Stable: ${Math.min(stableFrameCount, requiredFrames)} / ${requiredFrames} frames`;
+    },
     updateDebugPose(pose, screenRect) {
       if (pose) {
-        previewMarker.style.left = `${pose.debug.headCenterX * 100}%`;
+        previewMarker.style.left = `${(1 - pose.debug.headCenterX) * 100}%`;
         previewMarker.style.top = `${pose.debug.headCenterY * 100}%`;
       }
 
