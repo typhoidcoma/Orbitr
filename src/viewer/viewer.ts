@@ -32,6 +32,8 @@ export class Viewer {
   private readonly camera: PerspectiveCamera;
   private readonly renderer: WebGLRenderer;
   private readonly controls: OrbitControls;
+  private readonly container: HTMLElement;
+  private readonly resizeObserver: ResizeObserver | null;
   private readonly rootGroup = new Group();
   private readonly frustumMatrix = new Matrix4();
   private readonly headTarget = new Vector3(0, 0.75, 0);
@@ -39,6 +41,7 @@ export class Viewer {
   private readonly config: ViewerConfig;
 
   constructor(container: HTMLElement, config: ViewerConfig) {
+    this.container = container;
     this.config = config;
 
     this.camera = new PerspectiveCamera(config.fov, 1, config.near, config.far);
@@ -59,7 +62,15 @@ export class Viewer {
     this.scene.add(this.rootGroup);
     this.addDefaultHelpers();
 
+    this.resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            this.handleResize();
+          });
+
     window.addEventListener("resize", this.handleResize);
+    this.resizeObserver?.observe(this.container);
     this.handleResize();
   }
 
@@ -99,14 +110,8 @@ export class Viewer {
   }
 
   private handleResize = (): void => {
-    const parent = this.renderer.domElement.parentElement;
-    if (!parent) {
-      return;
-    }
-
-    const width = Math.max(1, parent.clientWidth);
-    const height = Math.max(1, parent.clientHeight);
-
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
     this.camera.aspect = width / height;
     this.applyOffAxisProjection();
     this.renderer.setSize(width, height, false);
@@ -137,6 +142,7 @@ export class Viewer {
   public dispose(): void {
     window.removeEventListener("resize", this.handleResize);
     this.controls.dispose();
+    this.resizeObserver?.disconnect();
     this.renderer.dispose();
   }
 }
