@@ -1,4 +1,9 @@
 import "./style.css";
+import {
+  loadViewerState,
+  resetViewerState,
+  saveViewerState,
+} from "./lib/calibrationStorage";
 import { parseViewerUrlParams } from "./lib/urlParams";
 import { loadViewerModel } from "./model/loadModel";
 import { FaceTracker } from "./tracking/faceTracker";
@@ -55,12 +60,17 @@ async function bootstrap(): Promise<void> {
     throw new Error("#app was not found in index.html");
   }
 
-  const params = parseViewerUrlParams(window.location.search);
-  const ui = createAppUi(app, params.calibration);
+  let persistedState = loadViewerState();
+  const params = parseViewerUrlParams(window.location.search, persistedState);
+  let calibration = params.calibration;
+  let modelTransform = params.modelTransform;
+
+  const ui = createAppUi(app, calibration, modelTransform);
   const viewer = new Viewer(ui.canvasHost, {
     near: params.near,
     far: params.far,
-    calibration: params.calibration,
+    calibration,
+    modelTransform,
   });
 
   const loadedModel = await loadViewerModel(params.modelUrl);
@@ -70,9 +80,15 @@ async function bootstrap(): Promise<void> {
     ui.setStatus(loadedModel.warning, "warning");
   } else {
     ui.setStatus(
-      `Loaded model: ${loadedModel.resolvedUrl}. Pick a monitor preset, then capture a neutral pose.`
+      calibration.calibrationComplete
+        ? `Loaded model: ${loadedModel.resolvedUrl}. Re-open the wizard any time to refine calibration.`
+        : `Loaded model: ${loadedModel.resolvedUrl}. Run the wizard, then capture a neutral pose.`
     );
   }
+
+  const persist = (): void => {
+    saveViewerState(calibration, modelTransform);
+  };
 
   const tracker = new FaceTracker(
     {
@@ -83,24 +99,54 @@ async function bootstrap(): Promise<void> {
       onError(message) {
         ui.setStatus(message, "error");
       },
+      onPreviewStream(stream) {
+        ui.setPreviewStream(stream);
+      },
     },
-    params.calibration
+    calibration
   );
 
-  ui.bindCalibrationHandlers({
+  ui.bindHandlers({
     onCalibrationChange(next) {
+      calibration = next;
       viewer.setCalibration(next);
       tracker.updateCalibration(next);
       ui.setCalibration(next);
+      persist();
     },
     onCaptureNeutral() {
       const captured = tracker.captureNeutralPose();
+      if (captured) {
+        calibration = { ...calibration, calibrationComplete: true };
+        viewer.setCalibration(calibration);
+        tracker.updateCalibration(calibration);
+        ui.setCalibration(calibration);
+        persist();
+      }
+
       ui.setStatus(
         captured
-          ? "Neutral pose captured. Close one eye and move around the screen to judge the window illusion."
+          ? "Neutral pose captured. Close one eye and test left/right and near/far motion."
           : "Tracking must be active before neutral pose can be captured.",
         captured ? "normal" : "warning"
       );
+    },
+    onModelTransformChange(next) {
+      modelTransform = next;
+      viewer.setModelTransform(next);
+      ui.setModelTransform(next);
+      persist();
+    },
+    onResetState() {
+      persistedState = resetViewerState();
+      calibration = persistedState.calibration;
+      modelTransform = persistedState.modelTransform;
+      viewer.setCalibration(calibration);
+      viewer.setModelTransform(modelTransform);
+      tracker.updateCalibration(calibration);
+      ui.setCalibration(calibration);
+      ui.setModelTransform(modelTransform);
+      ui.setStatus("Calibration and model controls were reset to defaults.");
     },
   });
 
@@ -146,8 +192,8 @@ async function bootstrap(): Promise<void> {
       viewer.setTrackingEnabled(true);
       ui.setStatus(
         getFullscreenElement() === ui.canvasHost
-          ? "Tracking active. Hold your usual viewing position, then click Capture Neutral Pose."
-          : "Tracking active. Fullscreen is recommended for the best window illusion, then click Capture Neutral Pose."
+          ? "Tracking active. Capture neutral pose, then test the window illusion."
+          : "Tracking active. Fullscreen is recommended before judging the illusion."
       );
     } catch {
       ui.setTrackingEnabled(false);

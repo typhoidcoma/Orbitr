@@ -7,6 +7,7 @@ import {
   Color,
   DirectionalLight,
   EdgesGeometry,
+  Euler,
   Group,
   LineBasicMaterial,
   LineSegments,
@@ -15,13 +16,13 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
+  RepeatWrapping,
   Scene,
   SRGBColorSpace,
-  RepeatWrapping,
   WebGLRenderer,
 } from "three";
 import { computeOffAxisFrustum } from "../lib/offAxis";
-import type { ParallaxCalibration } from "../lib/parallaxConfig";
+import type { ModelTransform, ParallaxCalibration } from "../lib/parallaxConfig";
 import { smoothValue } from "../lib/smoothing";
 import type { ViewerPose } from "../tracking/normalizeTracking";
 
@@ -29,6 +30,7 @@ export interface ViewerConfig {
   near: number;
   far: number;
   calibration: ParallaxCalibration;
+  modelTransform: ModelTransform;
 }
 
 export class Viewer {
@@ -37,25 +39,32 @@ export class Viewer {
   private readonly renderer: WebGLRenderer;
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver | null;
-  private readonly rootGroup = new Group();
+  private readonly sceneContentGroup = new Group();
+  private readonly modelAnchorGroup = new Group();
   private readonly frustumMatrix = new Matrix4();
   private readonly config: ViewerConfig;
   private readonly screenGroup = new Group();
-  private readonly windowBox = new Group();
+  private readonly presentationRoomGroup = new Group();
+  private readonly wireframeRoomGroup = new Group();
   private readonly screenPlane: Mesh;
-  private readonly roomGroup = new Group();
-  private readonly roomShell: Mesh;
+  private readonly screenFrame: LineSegments;
+  private readonly presentationRoomShell: Mesh;
+  private readonly wireframeRoomShell: LineSegments;
   private calibration: ParallaxCalibration;
+  private modelTransform: ModelTransform;
   private viewportWidth = 1;
   private viewportHeight = 1;
-  private targetPose: ViewerPose = createNeutralViewerPose();
-  private smoothedPose: ViewerPose = createNeutralViewerPose();
+  private targetPose: ViewerPose;
+  private smoothedPose: ViewerPose;
   private trackingEnabled = false;
 
   constructor(container: HTMLElement, config: ViewerConfig) {
     this.container = container;
     this.config = config;
     this.calibration = config.calibration;
+    this.modelTransform = config.modelTransform;
+    this.targetPose = createNeutralViewerPose(this.calibration);
+    this.smoothedPose = createNeutralViewerPose(this.calibration);
 
     this.camera = new PerspectiveCamera(50, 1, config.near, config.far);
     this.camera.position.set(0, 0, this.calibration.neutralDistance);
@@ -67,18 +76,25 @@ export class Viewer {
     container.append(this.renderer.domElement);
 
     this.scene.background = new Color("#0b1e2b");
-    this.scene.add(this.rootGroup);
+    this.scene.add(this.sceneContentGroup);
     this.scene.add(this.screenGroup);
-    this.scene.add(this.roomGroup);
+    this.scene.add(this.presentationRoomGroup);
+    this.scene.add(this.wireframeRoomGroup);
+    this.sceneContentGroup.add(this.modelAnchorGroup);
+
     this.screenPlane = new Mesh(
       new BoxGeometry(1, 1, 0.002),
       new MeshBasicMaterial({
-        color: "#65d7ff",
-        opacity: 0.05,
+        color: "#ff5656",
+        opacity: 0.035,
         transparent: true,
       })
     );
-    this.roomShell = new Mesh(
+    this.screenFrame = new LineSegments(
+      new EdgesGeometry(new BoxGeometry(1, 1, 0.002)),
+      new LineBasicMaterial({ color: "#ff4d4d" })
+    );
+    this.presentationRoomShell = new Mesh(
       new BoxGeometry(1, 1, 1),
       new MeshStandardMaterial({
         map: createCheckerTexture(),
@@ -88,9 +104,14 @@ export class Viewer {
         side: BackSide,
       })
     );
-    this.roomGroup.add(this.roomShell);
-    this.screenGroup.add(this.screenPlane);
-    this.buildWindowBox();
+    this.wireframeRoomShell = new LineSegments(
+      new EdgesGeometry(new BoxGeometry(1, 1, 1)),
+      new LineBasicMaterial({ color: "#79d9ff" })
+    );
+
+    this.screenGroup.add(this.screenPlane, this.screenFrame);
+    this.presentationRoomGroup.add(this.presentationRoomShell);
+    this.wireframeRoomGroup.add(this.wireframeRoomShell);
     this.addDefaultHelpers();
     this.layoutScene();
 
@@ -118,18 +139,6 @@ export class Viewer {
     );
 
     this.scene.add(ambient, key, axes);
-  }
-
-  private buildWindowBox(): void {
-    this.windowBox.clear();
-
-    const frame = new LineSegments(
-      new EdgesGeometry(new BoxGeometry(1, 1, 1)),
-      new LineBasicMaterial({ color: "#79d9ff" })
-    );
-    frame.position.set(0, 0, -0.6);
-    this.windowBox.add(frame);
-    this.screenGroup.add(this.windowBox);
   }
 
   private applyOffAxisProjection(): void {
@@ -174,13 +183,18 @@ export class Viewer {
   }
 
   public setModel(modelRoot: Group): void {
-    this.rootGroup.clear();
-    this.rootGroup.add(modelRoot);
+    this.modelAnchorGroup.clear();
+    this.modelAnchorGroup.add(modelRoot);
     this.layoutScene();
   }
 
   public setCalibration(calibration: ParallaxCalibration): void {
     this.calibration = calibration;
+    this.layoutScene();
+  }
+
+  public setModelTransform(modelTransform: ModelTransform): void {
+    this.modelTransform = modelTransform;
     this.layoutScene();
   }
 
@@ -203,11 +217,7 @@ export class Viewer {
       eyeZ: smoothValue(this.smoothedPose.eyeZ, target.eyeZ, alpha),
     };
 
-    this.camera.position.set(
-      this.smoothedPose.eyeX,
-      this.smoothedPose.eyeY,
-      this.smoothedPose.eyeZ
-    );
+    this.camera.position.set(this.smoothedPose.eyeX, this.smoothedPose.eyeY, this.smoothedPose.eyeZ);
     this.camera.rotation.set(0, 0, 0);
     this.applyOffAxisProjection();
     this.renderer.render(this.scene, this.camera);
@@ -221,39 +231,49 @@ export class Viewer {
 
   private layoutScene(): void {
     const screen = this.getEffectiveScreenDimensions();
-    const roomDepth = Math.max(1.4, screen.width * 2.6);
-    const roomHeight = screen.height * 2.2;
-    const roomWidth = screen.width * 2.4;
+    const roomDepth = Math.max(1.6, screen.width * 3);
+    const roomHeight = screen.height * 2.25;
+    const roomWidth = screen.width * 2.5;
+    const baseModelPositionX = this.calibration.screenOffsetX;
+    const baseModelPositionY = this.calibration.screenOffsetY - screen.height * 0.28;
+    const baseModelPositionZ = this.calibration.screenOffsetZ - roomDepth * 0.42;
 
-    this.rootGroup.position.set(
-      this.calibration.screenOffsetX,
-      this.calibration.screenOffsetY - screen.height * 0.28,
-      this.calibration.screenOffsetZ - roomDepth * 0.42
+    this.sceneContentGroup.position.set(0, 0, 0);
+    this.modelAnchorGroup.position.set(
+      baseModelPositionX + this.modelTransform.positionX,
+      baseModelPositionY + this.modelTransform.positionY,
+      baseModelPositionZ + this.modelTransform.positionZ
     );
+    this.modelAnchorGroup.rotation.copy(
+      new Euler(
+        degToRad(this.modelTransform.rotationX),
+        degToRad(this.modelTransform.rotationY),
+        degToRad(this.modelTransform.rotationZ)
+      )
+    );
+    this.modelAnchorGroup.scale.setScalar(this.modelTransform.scale);
 
     this.screenGroup.position.set(
       this.calibration.screenOffsetX,
       this.calibration.screenOffsetY,
       this.calibration.screenOffsetZ
     );
-    this.screenPlane.scale.set(
-      screen.width,
-      screen.height,
-      1
-    );
-    this.windowBox.visible = this.calibration.showWindowBox;
-    this.windowBox.scale.set(
-      screen.width,
-      screen.height,
-      Math.max(0.4, screen.width)
-    );
+    this.screenPlane.visible = this.calibration.showScreenFrame;
+    this.screenFrame.visible = this.calibration.showScreenFrame;
+    this.screenPlane.scale.set(screen.width, screen.height, 1);
+    this.screenFrame.scale.set(screen.width, screen.height, 1);
 
-    this.roomGroup.position.set(
+    this.presentationRoomGroup.visible = this.calibration.showPresentationRoom;
+    this.presentationRoomGroup.position.set(
       this.calibration.screenOffsetX,
       this.calibration.screenOffsetY + roomHeight * 0.08,
       this.calibration.screenOffsetZ - roomDepth * 0.5
     );
-    this.roomShell.scale.set(roomWidth, roomHeight, roomDepth);
+    this.presentationRoomShell.scale.set(roomWidth, roomHeight, roomDepth);
+
+    this.wireframeRoomGroup.visible = this.calibration.showWireframeRoom;
+    this.wireframeRoomGroup.position.copy(this.presentationRoomGroup.position);
+    this.wireframeRoomShell.scale.set(roomWidth, roomHeight, roomDepth);
   }
 
   private getEffectiveScreenDimensions(): { width: number; height: number } {
@@ -268,7 +288,6 @@ export class Viewer {
     const diagonal = Math.hypot(this.calibration.screenWidth, this.calibration.screenHeight);
     const height = diagonal / Math.sqrt(aspect * aspect + 1);
     const width = height * aspect;
-
     return { width, height };
   }
 
@@ -337,4 +356,8 @@ function createCheckerTexture(): CanvasTexture {
   texture.repeat.set(4, 3);
   texture.colorSpace = SRGBColorSpace;
   return texture;
+}
+
+function degToRad(value: number): number {
+  return (value * Math.PI) / 180;
 }

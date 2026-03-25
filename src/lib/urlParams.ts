@@ -1,8 +1,10 @@
 import {
-  DEFAULT_PARALLAX_CALIBRATION,
+  createDefaultViewerState,
   applyMonitorPreset,
   type MonitorPreset,
   type ParallaxCalibration,
+  type ModelTransform,
+  type PersistedViewerState,
 } from "./parallaxConfig";
 
 export interface ViewerUrlParams {
@@ -10,6 +12,7 @@ export interface ViewerUrlParams {
   near: number;
   far: number;
   calibration: ParallaxCalibration;
+  modelTransform: ModelTransform;
 }
 
 function parseFiniteNumber(raw: string | null, fallback: number, min: number, max: number): number {
@@ -25,18 +28,21 @@ function parseFiniteNumber(raw: string | null, fallback: number, min: number, ma
   return Math.min(max, Math.max(min, parsed));
 }
 
-function parseMonitorPreset(raw: string | null): MonitorPreset {
+function parseMonitorPreset(raw: string | null, fallback: MonitorPreset): MonitorPreset {
   if (raw === "24_desktop" || raw === "27_desktop" || raw === "14_laptop" || raw === "custom") {
     return raw;
   }
 
-  return DEFAULT_PARALLAX_CALIBRATION.monitorPreset;
+  return fallback;
 }
 
-export function parseViewerUrlParams(search: string): ViewerUrlParams {
+export function parseViewerUrlParams(
+  search: string,
+  baseState: PersistedViewerState = createDefaultViewerState()
+): ViewerUrlParams {
   const params = new URLSearchParams(search);
-  const preset = parseMonitorPreset(params.get("monitorPreset"));
-  const presetBase = applyMonitorPreset(DEFAULT_PARALLAX_CALIBRATION, preset);
+  const preset = parseMonitorPreset(params.get("monitorPreset"), baseState.calibration.monitorPreset);
+  const presetBase = applyMonitorPreset(baseState.calibration, preset);
 
   const calibration: ParallaxCalibration = {
     ...presetBase,
@@ -64,9 +70,39 @@ export function parseViewerUrlParams(search: string): ViewerUrlParams {
     cameraOffsetY: parseFiniteNumber(params.get("cameraOffsetY"), presetBase.cameraOffsetY, -0.5, 0.5),
     cameraOffsetZ: parseFiniteNumber(params.get("cameraOffsetZ"), presetBase.cameraOffsetZ, -0.5, 0.5),
     smoothing: parseFiniteNumber(params.get("smoothing"), presetBase.smoothing, 0, 1),
-    showDebug: params.get("debug") === "1" || presetBase.showDebug,
-    showWindowBox: params.get("windowBox") === "0" ? false : presetBase.showWindowBox,
+    showDebug: params.get("debug") === null ? presetBase.showDebug : params.get("debug") === "1",
+    showPresentationRoom:
+      params.get("presentationRoom") === null
+        ? presetBase.showPresentationRoom
+        : params.get("presentationRoom") === "1",
+    showWireframeRoom:
+      params.get("wireframeRoom") === null
+        ? presetBase.showWireframeRoom
+        : params.get("wireframeRoom") === "1",
+    showScreenFrame:
+      params.get("screenFrame") === null
+        ? presetBase.showScreenFrame
+        : params.get("screenFrame") === "1",
+    showFacePreview:
+      params.get("facePreview") === null
+        ? presetBase.showFacePreview
+        : params.get("facePreview") === "1",
+    calibrationComplete:
+      params.get("calibrated") === null
+        ? presetBase.calibrationComplete
+        : params.get("calibrated") === "1",
     monitorPreset: preset,
+  };
+
+  const transformBase = baseState.modelTransform;
+  const modelTransform: ModelTransform = {
+    positionX: parseFiniteNumber(params.get("modelX"), transformBase.positionX, -5, 5),
+    positionY: parseFiniteNumber(params.get("modelY"), transformBase.positionY, -5, 5),
+    positionZ: parseFiniteNumber(params.get("modelZ"), transformBase.positionZ, -5, 5),
+    rotationX: parseFiniteNumber(params.get("modelRotX"), transformBase.rotationX, -180, 180),
+    rotationY: parseFiniteNumber(params.get("modelRotY"), transformBase.rotationY, -180, 180),
+    rotationZ: parseFiniteNumber(params.get("modelRotZ"), transformBase.rotationZ, -180, 180),
+    scale: parseFiniteNumber(params.get("modelScale"), transformBase.scale, 0.1, 10),
   };
 
   return {
@@ -74,5 +110,6 @@ export function parseViewerUrlParams(search: string): ViewerUrlParams {
     near: parseFiniteNumber(params.get("near"), 0.1, 0.01, 10),
     far: parseFiniteNumber(params.get("far"), 100, 10, 1000),
     calibration,
+    modelTransform,
   };
 }

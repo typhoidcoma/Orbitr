@@ -21,6 +21,7 @@ const FACE_TASK_MODEL_URL =
 interface TrackerCallbacks {
   onFrame: (frame: TrackingFrame) => void;
   onError: (message: string) => void;
+  onPreviewStream?: (stream: MediaStream | null) => void;
 }
 
 export type TrackingFrame = ViewerPose;
@@ -62,6 +63,7 @@ export class FaceTracker {
       this.video.muted = true;
       this.video.playsInline = true;
       await this.video.play();
+      this.callbacks.onPreviewStream?.(this.stream);
 
       this.landmarker = await this.createLandmarker();
       this.running = true;
@@ -108,6 +110,8 @@ export class FaceTracker {
       }
       this.stream = null;
     }
+
+    this.callbacks.onPreviewStream?.(null);
   }
 
   public isRunning(): boolean {

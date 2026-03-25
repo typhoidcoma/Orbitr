@@ -1,5 +1,15 @@
 export type MonitorPreset = "24_desktop" | "27_desktop" | "14_laptop" | "custom";
 
+export interface ModelTransform {
+  positionX: number;
+  positionY: number;
+  positionZ: number;
+  rotationX: number;
+  rotationY: number;
+  rotationZ: number;
+  scale: number;
+}
+
 export interface ParallaxCalibration {
   monitorPreset: MonitorPreset;
   screenWidth: number;
@@ -17,7 +27,16 @@ export interface ParallaxCalibration {
   cameraOffsetZ: number;
   smoothing: number;
   showDebug: boolean;
-  showWindowBox: boolean;
+  showPresentationRoom: boolean;
+  showWireframeRoom: boolean;
+  showScreenFrame: boolean;
+  showFacePreview: boolean;
+  calibrationComplete: boolean;
+}
+
+export interface PersistedViewerState {
+  calibration: ParallaxCalibration;
+  modelTransform: ModelTransform;
 }
 
 export const MONITOR_PRESETS: Record<
@@ -41,6 +60,16 @@ export const MONITOR_PRESETS: Record<
   },
 };
 
+export const DEFAULT_MODEL_TRANSFORM: ModelTransform = {
+  positionX: 0,
+  positionY: 0,
+  positionZ: 0,
+  rotationX: 0,
+  rotationY: 0,
+  rotationZ: 0,
+  scale: 1,
+};
+
 export const DEFAULT_PARALLAX_CALIBRATION: ParallaxCalibration = {
   monitorPreset: "24_desktop",
   ...MONITOR_PRESETS["24_desktop"],
@@ -56,7 +85,11 @@ export const DEFAULT_PARALLAX_CALIBRATION: ParallaxCalibration = {
   cameraOffsetZ: 0.035,
   smoothing: 0.2,
   showDebug: false,
-  showWindowBox: true,
+  showPresentationRoom: true,
+  showWireframeRoom: true,
+  showScreenFrame: true,
+  showFacePreview: false,
+  calibrationComplete: false,
 };
 
 export function applyMonitorPreset(
@@ -74,5 +107,12 @@ export function applyMonitorPreset(
     ...calibration,
     monitorPreset: preset,
     ...MONITOR_PRESETS[preset],
+  };
+}
+
+export function createDefaultViewerState(): PersistedViewerState {
+  return {
+    calibration: { ...DEFAULT_PARALLAX_CALIBRATION },
+    modelTransform: { ...DEFAULT_MODEL_TRANSFORM },
   };
 }
