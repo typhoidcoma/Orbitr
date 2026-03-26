@@ -119,6 +119,13 @@ export function createAppUi(
 
       <section class="drawer-section">
         <h3>Scene</h3>
+        <div class="range-field">
+          <label>
+            <span>Turntable Speed</span>
+            <span id="turntable-speed-value">0.003</span>
+          </label>
+          <input id="turntable-speed" type="range" min="0" max="0.02" step="0.001" value="0.003" />
+        </div>
         <label class="toggle">
           <input id="show-presentation-room" type="checkbox" />
           <span>Checkerboard room</span>
@@ -189,6 +196,8 @@ export function createAppUi(
   const maxMovementInput = root.querySelector<HTMLInputElement>("#max-movement")!;
   const maxMovementValue = root.querySelector<HTMLSpanElement>("#max-movement-value")!;
   const screenDiagonalInput = root.querySelector<HTMLInputElement>("#screen-diagonal")!;
+  const turntableSpeedInput = root.querySelector<HTMLInputElement>("#turntable-speed")!;
+  const turntableSpeedValue = root.querySelector<HTMLSpanElement>("#turntable-speed-value")!;
   const presentationRoomToggle = root.querySelector<HTMLInputElement>("#show-presentation-room")!;
   const wireframeRoomToggle = root.querySelector<HTMLInputElement>("#show-wireframe-room")!;
   const screenFrameToggle = root.querySelector<HTMLInputElement>("#show-screen-frame")!;
@@ -232,6 +241,8 @@ export function createAppUi(
     depthSmoothingValue.textContent = next.depthSmoothing.toFixed(2);
     maxMovementInput.value = `${next.maxEyeDeltaX}`;
     maxMovementValue.textContent = `${Math.round(next.maxEyeDeltaX)}`;
+    turntableSpeedInput.value = `${next.turntableSpeed}`;
+    turntableSpeedValue.textContent = next.turntableSpeed.toFixed(3);
     presentationRoomToggle.checked = next.showPresentationRoom;
     wireframeRoomToggle.checked = next.showWireframeRoom;
     screenFrameToggle.checked = next.showScreenFrame;
@@ -349,6 +360,13 @@ export function createAppUi(
         const v = Number(maxMovementInput.value);
         maxMovementValue.textContent = `${Math.round(v)}`;
         calibration = { ...calibration, maxEyeDeltaX: v, maxEyeDeltaY: v, maxEyeDeltaZ: v };
+        handlers.onCalibrationChange(calibration);
+      });
+
+      turntableSpeedInput.addEventListener("input", () => {
+        const v = Number(turntableSpeedInput.value);
+        turntableSpeedValue.textContent = v.toFixed(3);
+        calibration = { ...calibration, turntableSpeed: v };
         handlers.onCalibrationChange(calibration);
       });
 

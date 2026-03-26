@@ -39,6 +39,7 @@ export interface ParallaxCalibration {
   neutralCaptureMaxOffset: number;
   neutralCaptureMaxScaleDelta: number;
   movementScale: number;
+  turntableSpeed: number;
   showDebug: boolean;
   showPresentationRoom: boolean;
   showWireframeRoom: boolean;
@@ -86,8 +87,8 @@ export const DEFAULT_MODEL_TRANSFORM: ModelTransform = {
 export const DEFAULT_PARALLAX_CALIBRATION: ParallaxCalibration = {
   monitorPreset: "24_desktop",
   ...MONITOR_PRESETS["24_desktop"],
-  gainX: 1,
-  gainY: 1,
+  gainX: 1.5,
+  gainY: 1.5,
   gainZ: 1,
   eyeRefinementGain: 0.8,
   screenOffsetX: 0,
@@ -110,6 +111,7 @@ export const DEFAULT_PARALLAX_CALIBRATION: ParallaxCalibration = {
   neutralCaptureMaxOffset: 0.012,
   neutralCaptureMaxScaleDelta: 0.01,
   movementScale: 1,
+  turntableSpeed: 0.003,
   showDebug: false,
   showPresentationRoom: true,
   showWireframeRoom: false,

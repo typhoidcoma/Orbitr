@@ -19,6 +19,15 @@ declare module "three/examples/jsm/controls/OrbitControls.js" {
   }
 }
 
+declare module "three/examples/jsm/loaders/RGBELoader.js" {
+  import { DataTextureLoader, LoadingManager, DataTexture } from "three";
+
+  export class RGBELoader extends DataTextureLoader {
+    constructor(manager?: LoadingManager);
+    loadAsync(url: string): Promise<DataTexture>;
+  }
+}
+
 declare module "three/examples/jsm/loaders/DRACOLoader.js" {
   import { Loader, LoadingManager } from "three";
 

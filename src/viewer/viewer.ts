@@ -6,6 +6,7 @@ import {
   Color,
   DirectionalLight,
   EdgesGeometry,
+  EquirectangularReflectionMapping,
   Euler,
   Group,
   LineBasicMaterial,
@@ -15,11 +16,13 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
+  PMREMGenerator,
   RepeatWrapping,
   Scene,
   SRGBColorSpace,
   WebGLRenderer,
 } from "three";
+import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { computeOffAxisFrustum } from "../lib/offAxis";
 import type { ModelTransform, ParallaxCalibration } from "../lib/parallaxConfig";
 
@@ -145,11 +148,30 @@ export class Viewer {
   }
 
   private addDefaultHelpers(): void {
-    const ambient = new AmbientLight("#d5e9ff", 0.8);
-    const key = new DirectionalLight("#ffffff", 1.2);
+    // Keep subtle direct lights as fallback while HDR loads
+    const ambient = new AmbientLight("#d5e9ff", 0.4);
+    const key = new DirectionalLight("#ffffff", 0.6);
     key.position.set(120, 160, 280);
-
     this.scene.add(ambient, key);
+
+    // Load HDR environment for reflections and image-based lighting
+    const pmrem = new PMREMGenerator(this.renderer);
+    pmrem.compileEquirectangularShader();
+
+    new RGBELoader()
+      .loadAsync("https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr")
+      .then((hdrTexture) => {
+        hdrTexture.mapping = EquirectangularReflectionMapping;
+        const envMap = pmrem.fromEquirectangular(hdrTexture).texture;
+        this.scene.environment = envMap;
+        // Don't set scene.background — keep it black
+        hdrTexture.dispose();
+        pmrem.dispose();
+      })
+      .catch((err) => {
+        console.warn("HDR environment failed to load, using fallback lighting", err);
+        pmrem.dispose();
+      });
   }
 
   private applyOffAxisProjection(): void {
@@ -225,7 +247,10 @@ export class Viewer {
     const pose = this.trackingEnabled ? this.targetPose : createNeutralViewerPose(this.calibration);
     this.camera.position.set(pose.eyeX, pose.eyeY, pose.eyeZ);
     this.camera.rotation.set(0, 0, 0);
-    this.syncEffectiveScreenRect();
+
+    // Turntable rotation on the model
+    this.modelAnchorGroup.rotation.y += this.calibration.turntableSpeed;
+
     this.applyOffAxisProjection();
     this.renderer.render(this.scene, this.camera);
   }
